@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    App theme extending Theme.Material.NoActionBar. Overrides the
+    accent colors so Switch widgets, focus highlights and other
+    interactive controls use the Home-on-Fire orange instead of the
+    Material default cyan.
+-->
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">@color/brand</item>
+        <item name="android:colorControlActivated">@color/brand</item>
+        <item name="android:colorControlHighlight">@color/brand_highlight</item>
+    </style>
+
+    <!--
+        AlertDialog theme so the target-picker list and the info
+        dialog pick up the same brand accent as the rest of the app.
+        Without this, dialogs inherit Material-default cyan because
+        they're created with android.R.style.Theme_Material_Dialog_Alert.
+    -->
+    <style name="AppDialogTheme" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/brand</item>
+        <item name="android:colorControlActivated">@color/brand</item>
+        <item name="android:colorControlHighlight">@color/brand_highlight</item>
+        <!-- Explicitly enable + tune the dim around the dialog. The
+             parent theme's default doesn't propagate reliably through
+             our overrides on Fire OS, so we restate it here. 0.35
+             gives a clearly visible "partial transparency" behind
+             the dialog without making the underlying screen unreadable. -->
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.35</item>
+    </style>
+</resources>

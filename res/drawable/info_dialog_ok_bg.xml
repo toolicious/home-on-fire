@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Background for the OK button in the about / info dialog. Plain
+    Buttons get only a faint focus highlight from the Material theme,
+    too subtle for TV viewing distance. This state-list flips the
+    button to a fully saturated brand-red fill on focus so the user
+    can see at a glance that OK is selected.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/brand" />
+            <corners android:radius="4dp" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/row_pressed" />
+            <corners android:radius="4dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#33FFFFFF" />
+            <corners android:radius="4dp" />
+        </shape>
+    </item>
+</selector>

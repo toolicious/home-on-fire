@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon for API 26+. The system composites foreground and
+  background and applies its own platform-specific mask (rounded square
+  on Fire OS, circle on Pixel, squircle on Samsung, and so on). Do not
+  bake rounded corners into the foreground PNG; the system would mask
+  twice and the result looks smaller and softer than every other app
+  on the device.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background"/>
+    <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+</adaptive-icon>

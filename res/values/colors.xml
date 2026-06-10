@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Canonical color palette. The Java code in MainActivity defines int
+    constants that mirror these values (annotated with the matching
+    @color name in a comment); keep both in sync. Drawables and the
+    AppTheme reference these names directly.
+-->
+<resources>
+    <!-- Home on Fire brand red. Used by the top bar, the adaptive
+         icon background, the focus highlight tint and the info-button
+         text-on-focus inversion. -->
+    <color name="brand">#FFB61414</color>
+    <!-- Focus tint shared by all interactive controls (switch rows,
+         buttons, etc.). The Material theme pipes this into
+         colorControlHighlight so buttons pick it up automatically. -->
+    <color name="brand_highlight">#44B61414</color>
+
+    <!-- Neutral surface colors. -->
+    <color name="surface_tip_box">#FF2A2A2A</color>
+
+    <!-- Text. -->
+    <color name="text_neutral">#FFE0E0E0</color>
+    <color name="text_white">#FFFFFFFF</color>
+
+    <!-- Info-button state list (round translucent disc, white-fill on focus). -->
+    <color name="info_btn_idle">#33FFFFFF</color>
+    <color name="info_btn_pressed">#66FFFFFF</color>
+    <color name="info_btn_focused">#FFFFFFFF</color>
+
+    <!-- Switch-row pressed-state fill (the focused fill uses
+         @color/brand_highlight, kept as a single source of truth). -->
+    <color name="row_pressed">#66B61414</color>
+
+</resources>

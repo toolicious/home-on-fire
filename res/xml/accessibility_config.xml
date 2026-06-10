@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No packageNames filter on purpose: we need foreground events from all
+  apps to track when the user has just LEFT the Amazon launcher (the
+  back-button handler in HijackService depends on knowing whether the
+  Amazon home activity is currently in front).
+
+  canRequestFilterKeyEvents=true (paired with flagRequestFilterKeyEvents)
+  lets HijackService.onKeyEvent receive key events before the system
+  dispatches them, so we can intercept the Back key on the Amazon home
+  screen and redirect to our target app instead. KEYCODE_HOME is
+  system-reserved on Fire OS and not delivered here; only Back and
+  other ordinary keys arrive.
+
+  canRetrieveWindowContent=true is needed to query the foreground
+  package live via getRootInActiveWindow() when the cached tracker is
+  out of date (the Amazon launcher fires sub-window events that
+  briefly switch the tracker off without it coming back on, which
+  would otherwise prevent our Back interception).
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeViewFocused"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRequestFilterKeyEvents|flagRetrieveInteractiveWindows"
+    android:canRequestFilterKeyEvents="true"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_description"
+    android:notificationTimeout="100" />

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Home on Fire</string>
+    <string name="service_label">Home on Fire Service</string>
+    <string name="repo_url">https://github.com/toolicious/home-on-fire</string>
+
+    <!--
+        Shown by Android in Settings → Accessibility next to the toggle
+        for our service. Should explain in one sentence what the service
+        does and why it needs the binding.
+    -->
+    <string name="accessibility_description">
+        Redirects the Fire TV Home button to a launcher of your choice,
+        and offers an optional long-press of the Menu key as a shortcut
+        back into Home on Fire.
+    </string>
+
+    <!-- Target row -->
+    <string name="target_picker_tip">Choose which app to launch in place of the Fire TV home. Long-press opens the selected app\'s system info page.</string>
+    <string name="target_none">Choose target app…</string>
+    <string name="target_not_installed_suffix"> - not installed</string>
+    <string name="target_picker_emoji">📂</string>
+    <string name="target_picker_emoji_desc">Choose target app</string>
+    <string name="launch_button_glyph">▶</string>
+    <string name="launch_button_desc">Launch target app</string>
+    <string name="launch_button_tip">Launch the target app now.</string>
+
+    <!-- Switches -->
+    <string name="switch_accessibility">Accessibility service (required)</string>
+    <string name="switch_accessibility_tip">Required for everything else in this app to work. This permission has to be granted only once via adb:\nadb shell pm grant io.github.toolicious.homeonfire android.permission.WRITE_SECURE_SETTINGS</string>
+    <string name="switch_hijack">Replace ⌂ Home button</string>
+    <string name="switch_hijack_tip">Pressing ⌂ Home from any third-party app opens the target app instead of the default home screen.\nDouble-press or long-press ⌂ Home in the target app to escape to the default home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon is focused to open the target app.</string>
+    <string name="switch_boot">Launch on boot</string>
+    <string name="switch_boot_tip">Open the target app automatically when the device boots or wakes from standby.</string>
+    <string name="switch_menu_lp">☰ Menu long-press opens this config screen</string>
+    <string name="switch_menu_lp_tip">Hold the ☰ Menu button for half a second inside the target app or Fire TV home to open this config screen.</string>
+    <string name="switch_verbose">Verbose logging (for debugging)</string>
+    <string name="switch_verbose_tip">Logs every key and window event the accessibility service receives, tagged HomeOnFire. View with:\nadb logcat -s HomeOnFire</string>
+
+    <!-- Info-dialog "open device settings" link. -->
+    <string name="info_dialog_device_info_link">Fire OS device info</string>
+
+    <!-- Header info button -->
+    <string name="info_button_glyph">ⓘ</string>
+    <string name="info_button_desc">About Home on Fire</string>
+    <string name="info_button_tip">App name, version, project link and Fire OS device info.</string>
+
+    <!-- Info dialog -->
+    <string name="info_dialog_version">Version %1$s</string>
+    <string name="info_dialog_version_unknown">?</string>
+    <string name="info_dialog_description">Redirects the Fire TV ⌂ Home button to a launcher of your choice.</string>
+    <string name="info_dialog_ok">OK</string>
+
+    <!-- Toasts -->
+    <string name="toast_grant_via_adb">Run once via adb:\nadb shell pm grant io.github.toolicious.homeonfire android.permission.WRITE_SECURE_SETTINGS</string>
+    <string name="toast_no_browser">No browser installed.</string>
+    <string name="toast_settings_unavailable">Settings not available.</string>
+    <string name="toast_no_target">No target app set.</string>
+    <string name="toast_target_missing">Target app not installed: %1$s</string>
+    <string name="toast_no_launchable_apps">No launchable apps found to set as target.</string>
+
+    <!-- Picker -->
+    <string name="picker_title">Choose target app</string>
+</resources>

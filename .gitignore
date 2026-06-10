@@ -1,0 +1,37 @@
+# --- Build artifacts ---
+build/
+*.apk
+*.apk.idsig
+README.html
+
+# --- Debug / runtime data ---
+# logcat dumps captured during development can contain LAN IPs,
+# installed-package lists and behavioural traces.
+logcat.txt
+*.log
+
+# --- Signing material ---
+# The keystore must never be published; it grants signing identity for
+# updates of this app. Keep a local copy in `keystore/` and the password
+# out of any committed file.
+keystore/
+*.keystore
+*.jks
+keystore.properties
+
+# --- Old / scratch dirs ---
+_*.deleteme/
+_*.deleteme
+
+# --- Tooling sidecars ---
+.kangentic/
+.notes/
+.claude/
+.idea/
+.vscode/
+
+# --- Editor / OS ---
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

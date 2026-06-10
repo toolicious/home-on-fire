@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Round background for the header info button. State-list so the
+    focused state is clearly visible at TV viewing distance: lighter
+    fill plus a white stroke. Pressed state darkens the fill briefly.
+    Without an explicit state-list the default Button background would
+    be replaced by setBackgroundColor and the focus highlight would
+    disappear, which on a remote-only device makes the button unusable.
+-->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/info_btn_focused" />
+            <stroke android:width="3dp" android:color="@color/info_btn_focused" />
+        </shape>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/info_btn_pressed" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/info_btn_idle" />
+        </shape>
+    </item>
+</selector>
