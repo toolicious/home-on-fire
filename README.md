@@ -92,11 +92,7 @@ Amazon Appstore can be installed. Existing Fire OS devices stay
 supported; for any new purchase, check the OS first.
 
 **Tested it on another device?** Please add your result to the
-[compatibility reports thread](https://github.com/toolicious/home-on-fire/issues/1),
-a single pinned issue so reports stay in one place instead of
-scattered across separate issues. The first post has a short
-copy-paste form. The Fire OS version and build number are under
-**Settings → My Fire TV → About**.
+[compatibility reports thread](https://github.com/toolicious/home-on-fire/issues/1).
 
 ---
 
