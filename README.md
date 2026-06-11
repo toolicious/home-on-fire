@@ -92,7 +92,7 @@ Amazon Appstore can be installed. Existing Fire OS devices stay
 supported; for any new purchase, check the OS first.
 
 **Tested it on another device?** Please add your result to the
-[compatibility reports thread](https://github.com/toolicious/home-on-fire/issues/1).
+[compatibility reports thread](https://github.com/toolicious/home-on-fire/issues/2).
 
 ---
 
