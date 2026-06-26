@@ -35,10 +35,20 @@
     <string name="switch_menu_lp">☰ Menu long-press opens this config screen</string>
     <string name="switch_menu_lp_tip">Hold the ☰ Menu button for half a second inside the target app or Fire TV home to open this config screen.</string>
     <string name="switch_verbose">Verbose logging (for debugging)</string>
-    <string name="switch_verbose_tip">Logs every key and window event the accessibility service receives, tagged HomeOnFire. View with:\nadb logcat -s HomeOnFire</string>
+    <string name="switch_verbose_tip">Logs every key and window event the accessibility service receives, tagged HomeOnFire. View on-device with the button on the right, or with:\nadb logcat -s HomeOnFire</string>
+
+    <!-- Log viewer: round button in the verbose row + the full-screen view it opens. -->
+    <string name="log_button_desc">Show diagnostic log</string>
+    <string name="log_button_tip">Open a full-screen diagnostic view (Fire OS, accessibility status, target, recent log) you can photograph and share, no adb needed.</string>
+    <string name="log_viewer_title">Diagnostic log</string>
 
     <!-- Info-dialog "open device settings" link. -->
     <string name="info_dialog_device_info_link">Fire OS device info</string>
+
+    <!-- Loader animation, reachable as an easter egg via the info-dialog logo. -->
+    <string name="loader_caption_loading">Loading custom launcher…</string>
+    <string name="loader_caption_ready">Ready</string>
+    <string name="loader_preview_hint">Press ◀ Back or OK to close</string>
 
     <!-- Header info button -->
     <string name="info_button_glyph">ⓘ</string>

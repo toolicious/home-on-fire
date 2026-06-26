@@ -59,6 +59,9 @@ public class MainActivity extends Activity {
     /** First focusable view; receives focus on startup so the tip box is non-empty. */
     private View initialFocus;
 
+    /** Round "show log" button on the right of the verbose row; visible only while verbose logging is on. */
+    private View logBtn;
+
     /**
      * Flag flipped during programmatic switch updates (e.g. in
      * {@link #refresh}) so the onCheckedChange listeners don't think
@@ -283,13 +286,118 @@ public class MainActivity extends Activity {
                 prefToggle(new PrefSetter() {
                     @Override public void set(boolean v) { prefs.setMenuLongPressLaunch(v); }
                 }));
-        verboseSwitch = makeSwitchRow(content,
-                getString(R.string.switch_verbose),
-                getString(R.string.switch_verbose_tip),
-                prefs.isVerboseLogging(),
-                prefToggle(new PrefSetter() {
-                    @Override public void set(boolean v) { prefs.setVerboseLogging(v); }
-                }));
+        addVerboseRow(content);
+    }
+
+    /**
+     * Verbose-logging row. Unlike the plain switch rows this one carries a
+     * second focusable control on the right: a round button that opens
+     * {@link LogViewerActivity}. The button is only visible while verbose
+     * logging is on (see {@link #updateLogButtonVisibility}). Modelled on
+     * the target row (focusable area on the left, round action button on
+     * the right) so d-pad focus stays predictable.
+     */
+    private void addVerboseRow(LinearLayout content) {
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.HORIZONTAL);
+        outer.setGravity(Gravity.CENTER_VERTICAL);
+
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setFocusable(true);
+        row.setClickable(true);
+        row.setBackground(getDrawable(R.drawable.row_focus_bg));
+
+        final Switch sw = new Switch(this);
+        sw.setChecked(prefs.isVerboseLogging());
+        sw.setFocusable(false);
+        sw.setClickable(false);
+        sw.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean isChecked) {
+                if (suppressSwitchEvents) return;
+                prefs.setVerboseLogging(isChecked);
+                updateLogButtonVisibility();
+            }
+        });
+        LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        swLp.rightMargin = dp(16);
+        row.addView(sw, swLp);
+
+        TextView tv = new TextView(this);
+        tv.setText(R.string.switch_verbose);
+        tv.setTextSize(18);
+        tv.setTextColor(Colors.NEUTRAL);
+        LinearLayout.LayoutParams tvLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        row.addView(tv, tvLp);
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (row.isEnabled()) sw.toggle();
+            }
+        });
+        attachTip(row, getString(R.string.switch_verbose_tip));
+
+        outer.addView(row, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        logBtn = buildLogButton();
+        int size = dp(48);
+        LinearLayout.LayoutParams logLp = new LinearLayout.LayoutParams(size, size);
+        logLp.leftMargin = dp(12);
+        outer.addView(logBtn, logLp);
+
+        // Keep the field pointing at the switch so refresh / dependency
+        // handling keeps working exactly as for the other rows.
+        verboseSwitch = sw;
+        content.addView(outer);
+    }
+
+    /**
+     * Round button on the right of the verbose row that opens the
+     * full-screen diagnostic log. A "description" vector icon tinted via
+     * the same colour selector as the header info button and the target
+     * launch button (white normally, brand red on focus), so it stays
+     * crisp and consistent at any density.
+     */
+    private ImageView buildLogButton() {
+        ImageView btn = new ImageView(this);
+        btn.setImageResource(R.drawable.ic_log);
+        btn.setImageTintList(getResources().getColorStateList(R.color.info_button_text));
+        btn.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        int iconPad = dp(12);
+        btn.setPadding(iconPad, iconPad, iconPad, iconPad);
+        btn.setBackground(getDrawable(R.drawable.info_button_bg));
+        btn.setFocusable(true);
+        btn.setClickable(true);
+        btn.setContentDescription(getString(R.string.log_button_desc));
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(MainActivity.this, LogViewerActivity.class));
+            }
+        });
+        attachTip(btn, getString(R.string.log_button_tip));
+        return btn;
+    }
+
+    /**
+     * Shows the log button only while verbose logging is on AND the
+     * accessibility service is enabled. Gating on the service too means the
+     * diagnostic log is only reachable when the redirect can actually run,
+     * so its empty-log explanation never has to cover a plain "service
+     * switched off" case.
+     */
+    private void updateLogButtonVisibility() {
+        if (logBtn != null) {
+            boolean show = prefs.isVerboseLogging() && accessSwitch.isChecked();
+            logBtn.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
     }
 
     /**
@@ -593,6 +701,7 @@ public class MainActivity extends Activity {
         setRowEnabled(bootSwitch, accessOn);
         setRowEnabled(verboseSwitch, accessOn);
         setRowEnabled(menuLpSwitch, accessOn);
+        updateLogButtonVisibility();
         // If the row that held d-pad focus just became non-focusable
         // (e.g. the service was disabled via ADB while a feature row was
         // focused, picked up on resume), move focus to the accessibility

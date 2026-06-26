@@ -27,6 +27,7 @@ import android.widget.Toast;
  * axis. AlertDialog's own positive button would otherwise live
  * right-aligned at the bottom.
  */
+@SuppressWarnings("deprecation")
 public final class InfoDialog {
 
     private InfoDialog() {}
@@ -44,8 +45,26 @@ public final class InfoDialog {
         // declared opacity.
         body.setBackgroundColor(Colors.TIP_BG);
 
+        // Hidden easter egg: the logo is focusable and clickable. Navigating
+        // up from the OK button (OK, then device-info link, then repo link,
+        // then the logo) lands here; activating it plays the loading animation
+        // full-screen. No visible hint, so it stays a discovery, not a feature.
+        // Focus is shown by tinting the white logo brand red (no background
+        // frame), reusing the same focus selector as the header buttons.
         ImageView dialogLogo = new ImageView(host);
         dialogLogo.setImageResource(R.drawable.ic_logo);
+        dialogLogo.setImageTintList(
+                host.getResources().getColorStateList(R.color.info_button_text));
+        dialogLogo.setFocusable(true);
+        dialogLogo.setClickable(true);
+        dialogLogo.setContentDescription(host.getString(R.string.app_name));
+        dialogLogo.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent i = new Intent(host, LoaderPreviewActivity.class);
+                host.startActivity(i);
+            }
+        });
         LinearLayout.LayoutParams dlLp = new LinearLayout.LayoutParams(
                 UiUtil.dp(host, 80), UiUtil.dp(host, 80));
         dlLp.bottomMargin = UiUtil.dp(host, 12);

@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     package="io.github.toolicious.homeonfire"
-    android:versionCode="93"
-    android:versionName="1.0.92">
+    android:versionCode="101"
+    android:versionName="1.0.100">
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -46,6 +46,14 @@
 
         <activity
             android:name=".TargetPickerActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".LogViewerActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".LoaderPreviewActivity"
             android:exported="false" />
 
         <service

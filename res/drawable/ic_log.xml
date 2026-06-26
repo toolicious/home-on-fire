@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    "description" Material Symbol: a single sheet with text lines, used as
+    the diagnostic-log button in the verbose row. fillColor is white so the
+    icon tints cleanly via the info_button_text colour selector (white
+    normally, brand red on focus), matching the round info and launch
+    buttons. Path is Google's Material Icons "description" at 24dp.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+</vector>

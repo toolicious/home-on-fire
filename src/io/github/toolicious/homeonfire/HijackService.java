@@ -6,8 +6,12 @@ import android.accessibilityservice.AccessibilityService;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.PixelFormat;
+import android.os.Build;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
@@ -108,6 +112,7 @@ public class HijackService extends AccessibilityService {
         super.onServiceConnected();
         prefs = new Prefs(this);
         mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         // A fresh service instance must not inherit a suppression window
         // left in the static bypassUntil by a previous instance. The
         // instance timing fields (lastHijackAt, lastKeyTime, lastKeyCode)
@@ -115,6 +120,7 @@ public class HijackService extends AccessibilityService {
         // stay a static entry point) and therefore needs an explicit clear.
         bypassUntil = 0L;
         consumedDownKey = -1;
+        cancelMask();
         // Seed foreground tracking from whatever is on screen now so a
         // long-press immediately after service start (e.g. right after
         // an install or accessibility toggle) has a valid prev to work
@@ -348,6 +354,13 @@ public class HijackService extends AccessibilityService {
         if (pkgStr != null && !pkgStr.equals(currentForegroundPkg)) {
             previousForegroundPkg = currentForegroundPkg;
             currentForegroundPkg = pkgStr;
+        }
+
+        // Tear down / cancel the masking overlay the moment the target window
+        // actually appears (matched on package). maskArmed is only ever set on
+        // Fire OS 6/7, so this is a no-op on Fire OS 8.
+        if (maskArmed && pkgStr != null && pkgStr.equals(maskTargetPkg)) {
+            onMaskTargetAppeared();
         }
 
         boolean isAmazonHome = AMAZON_LAUNCHER.equals(pkgStr)
@@ -717,6 +730,7 @@ public class HijackService extends AccessibilityService {
             // hit the still-active bypass and strand the user there.
             bypassUntil = 0L;
             Log.i(TAG, reasonForLog + ". Launched " + target);
+            armMask(target);
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to launch " + target, e);
@@ -1071,6 +1085,7 @@ public class HijackService extends AccessibilityService {
             mainHandler.removeCallbacksAndMessages(null);
         }
         consumedDownKey = -1;
+        removeMask();
         if (screenOnReceiver != null) {
             try {
                 unregisterReceiver(screenOnReceiver);
@@ -1102,9 +1117,204 @@ public class HijackService extends AccessibilityService {
         return !pm.queryIntentActivities(probe, 0).isEmpty();
     }
 
+    // FOS7 5-second-delay masking overlay.
+    //
+    // On Android 9 (Fire OS 6/7) a background activity start issued after HOME
+    // is deferred by ActivityManager's app-switch lock (APP_SWITCH_DELAY_TIME =
+    // 5s), so the target launcher only appears ~5s after Amazon's home flashes.
+    // That delay cannot be removed without root, so we MASK it: a full-screen
+    // TYPE_ACCESSIBILITY_OVERLAY (a window add, which is NOT subject to the
+    // app-switch lock) covers the gap, then fades out the instant the target
+    // window actually appears.
+    //
+    // It is self-calibrating, not an assumption: the overlay is only shown if
+    // the target has not become foreground within a short grace window (so
+    // prompt launches, e.g. Fire OS 8 where there is no delay, never flash it),
+    // and it is removed on the real target window-state event (faded, because
+    // that event can precede the first painted frame, and a same-frame removal
+    // would briefly reveal a blank frame). A hard timeout plus onInterrupt and
+    // onUnbind are safety nets so the overlay can never strand on screen. Gated
+    // to SDK_INT <= 28: Android 10+ (Fire OS 8) has no such delay.
+
+    /** True only where the Android-9 app-switch delay exists (Fire OS 6/7). */
+    private static final boolean MASK_SUPPORTED = Build.VERSION.SDK_INT <= 28;
+    /** Grace after a redirect before showing the mask, so prompt launches never flash it. */
+    private static final long MASK_GRACE_MS = 150L;
+    /** Cross-fade duration once the target window appears. */
+    private static final long MASK_FADE_MS = 200L;
+    /** Safety net: force-remove the overlay if the target window never announces itself. */
+    private static final long MASK_HARD_TIMEOUT_MS = 6_500L;
+
+    private WindowManager windowManager;
+    private LoaderView maskView;
+    private boolean maskAttached = false;
+    private volatile boolean maskArmed = false;
+    private volatile String maskTargetPkg = null;
+    private Runnable maskGraceRunnable = null;
+    private Runnable maskTimeoutRunnable = null;
+
+    /**
+     * Arms the masking overlay for a freshly issued redirect (called from
+     * {@link #launchTarget} after a successful start). No-op on Fire OS 8+.
+     * Resets any in-flight mask first so overlapping redirects cannot stack
+     * overlays.
+     */
+    private void armMask(final String target) {
+        if (!MASK_SUPPORTED) return;
+        if (target == null || target.isEmpty()) return;
+        cancelMask();
+        if (mainHandler == null) {
+            mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        }
+        maskArmed = true;
+        maskTargetPkg = target;
+        maskGraceRunnable = new Runnable() {
+            @Override
+            public void run() {
+                maskGraceRunnable = null;
+                // Target still not foreground after the grace window: the launch
+                // is being deferred (the Android 9 case), so cover the gap.
+                if (maskArmed && !maskAttached && !target.equals(currentForegroundPkg)) {
+                    showMask();
+                }
+            }
+        };
+        mainHandler.postDelayed(maskGraceRunnable, MASK_GRACE_MS);
+    }
+
+    /**
+     * The target launcher's window has appeared (matched on package in
+     * {@link #onAccessibilityEvent}). Cancel a pending show (fast launch, no mask
+     * needed) or fade out an already-shown mask. Fading rather than a hard cut
+     * because the window-state event can fire a frame or two before the target
+     * has painted, and a same-frame removal would briefly reveal a blank frame.
+     */
+    private void onMaskTargetAppeared() {
+        if (maskGraceRunnable != null && mainHandler != null) {
+            mainHandler.removeCallbacks(maskGraceRunnable);
+            maskGraceRunnable = null;
+        }
+        maskArmed = false;
+        if (maskAttached) {
+            fadeOutAndRemoveMask();
+        } else {
+            maskTargetPkg = null;
+        }
+    }
+
+    /**
+     * Adds the full-screen loading overlay. The view paints an opaque background
+     * so it fully hides what is behind while shown; the window format is
+     * translucent so the fade-out can cross-dissolve to the launcher underneath.
+     */
+    private void showMask() {
+        if (maskAttached) return;
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (windowManager == null) return;
+        }
+        try {
+            LoaderView view = new LoaderView(this);
+            view.setCaptions(getString(R.string.loader_caption_loading),
+                    getString(R.string.loader_caption_ready));
+            view.setLooping(false); // one-shot: play once, hold on the "Ready" frame
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    PixelFormat.TRANSLUCENT);
+            lp.gravity = Gravity.TOP | Gravity.START;
+            windowManager.addView(view, lp);
+            maskView = view;
+            maskAttached = true;
+            scheduleMaskTimeout();
+            Log.i(TAG, "Mask shown for deferred launch of " + maskTargetPkg);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to show mask", e);
+            maskView = null;
+            maskAttached = false;
+        }
+    }
+
+    /** Cross-fades the overlay out, then detaches it. */
+    private void fadeOutAndRemoveMask() {
+        if (!maskAttached || maskView == null) {
+            removeMask();
+            return;
+        }
+        maskView.animate().alpha(0f).setDuration(MASK_FADE_MS)
+                .withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                        removeMask();
+                    }
+                }).start();
+    }
+
+    /** Idempotent teardown: cancels the timeout, detaches the view, resets state. */
+    private void removeMask() {
+        cancelMaskTimeout();
+        if (maskView != null) {
+            try {
+                maskView.animate().cancel();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (maskAttached && windowManager != null) {
+                    windowManager.removeView(maskView);
+                }
+            } catch (Exception ignored) {
+                // already detached / never attached
+            }
+            maskView.stop();
+            maskView = null;
+        }
+        maskAttached = false;
+        maskArmed = false;
+        maskTargetPkg = null;
+    }
+
+    /** Cancels a pending grace show and removes any shown overlay. */
+    private void cancelMask() {
+        if (maskGraceRunnable != null && mainHandler != null) {
+            mainHandler.removeCallbacks(maskGraceRunnable);
+            maskGraceRunnable = null;
+        }
+        removeMask();
+    }
+
+    private void scheduleMaskTimeout() {
+        cancelMaskTimeout();
+        if (mainHandler == null) return;
+        maskTimeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                maskTimeoutRunnable = null;
+                if (maskAttached) {
+                    Log.i(TAG, "Mask hard-timeout: target window never appeared, removing");
+                    removeMask();
+                }
+            }
+        };
+        mainHandler.postDelayed(maskTimeoutRunnable, MASK_HARD_TIMEOUT_MS);
+    }
+
+    private void cancelMaskTimeout() {
+        if (maskTimeoutRunnable != null && mainHandler != null) {
+            mainHandler.removeCallbacks(maskTimeoutRunnable);
+            maskTimeoutRunnable = null;
+        }
+    }
+
     @Override
     public void onInterrupt() {
-        // Required override. Nothing to do. We hold no interruptible state.
+        // Tear down any masking overlay so a system interrupt can never strand
+        // it on screen.
+        removeMask();
     }
 
     /**
