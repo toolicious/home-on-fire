@@ -121,6 +121,7 @@ public class HijackService extends AccessibilityService {
         bypassUntil = 0L;
         consumedDownKey = -1;
         cancelMask();
+        schedulePrewarm();
         // Seed foreground tracking from whatever is on screen now so a
         // long-press immediately after service start (e.g. right after
         // an install or accessibility toggle) has a valid prev to work
@@ -1085,7 +1086,7 @@ public class HijackService extends AccessibilityService {
             mainHandler.removeCallbacksAndMessages(null);
         }
         consumedDownKey = -1;
-        removeMask();
+        cancelMask();
         if (screenOnReceiver != null) {
             try {
                 unregisterReceiver(screenOnReceiver);
@@ -1138,12 +1139,18 @@ public class HijackService extends AccessibilityService {
 
     /** True only where the Android-9 app-switch delay exists (Fire OS 6/7). */
     private static final boolean MASK_SUPPORTED = Build.VERSION.SDK_INT <= 28;
-    /** Grace after a redirect before showing the mask, so prompt launches never flash it. */
-    private static final long MASK_GRACE_MS = 150L;
+    /** Grace after a redirect before showing the mask. Kept small: this only runs on Fire OS
+     *  6/7, where the launch is always deferred (the grace just adds Amazon-home visibility);
+     *  Fire OS 8, where a quick launch could otherwise flash it, is gated out entirely. */
+    private static final long MASK_GRACE_MS = 50L;
     /** Cross-fade duration once the target window appears. */
     private static final long MASK_FADE_MS = 200L;
     /** Safety net: force-remove the overlay if the target window never announces itself. */
     private static final long MASK_HARD_TIMEOUT_MS = 6_500L;
+    /** Delay after the service connects before prewarming the overlay path. */
+    private static final long MASK_PREWARM_DELAY_MS = 600L;
+    /** How long the invisible prewarm overlay stays up (long enough to render a few frames). */
+    private static final long MASK_PREWARM_MS = 160L;
 
     private WindowManager windowManager;
     private LoaderView maskView;
@@ -1152,6 +1159,9 @@ public class HijackService extends AccessibilityService {
     private volatile String maskTargetPkg = null;
     private Runnable maskGraceRunnable = null;
     private Runnable maskTimeoutRunnable = null;
+    /** Throwaway overlay added once at service start to warm the render path. */
+    private LoaderView maskPrewarmView;
+    private Runnable maskPrewarmRemove = null;
 
     /**
      * Arms the masking overlay for a freshly issued redirect (called from
@@ -1213,22 +1223,13 @@ public class HijackService extends AccessibilityService {
             windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
             if (windowManager == null) return;
         }
+        removePrewarm();
         try {
             LoaderView view = new LoaderView(this);
             view.setCaptions(getString(R.string.loader_caption_loading),
                     getString(R.string.loader_caption_ready));
             view.setLooping(false); // one-shot: play once, hold on the "Ready" frame
-            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                            | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                    PixelFormat.TRANSLUCENT);
-            lp.gravity = Gravity.TOP | Gravity.START;
-            windowManager.addView(view, lp);
+            windowManager.addView(view, maskLayoutParams());
             maskView = view;
             maskAttached = true;
             scheduleMaskTimeout();
@@ -1237,6 +1238,91 @@ public class HijackService extends AccessibilityService {
             Log.e(TAG, "Failed to show mask", e);
             maskView = null;
             maskAttached = false;
+        }
+    }
+
+    /** Shared overlay LayoutParams for the real mask and the prewarm. */
+    private WindowManager.LayoutParams maskLayoutParams() {
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
+        return lp;
+    }
+
+    /**
+     * Schedules a one-time, invisible run of the overlay path shortly after the service
+     * connects. The first real mask otherwise pays a cold-start cost (class load, shader
+     * build, first GPU draw) that shows up as a ~0.5s Amazon-home flash on the first Home
+     * press; warming the path here makes the first mask render as fast as later ones.
+     */
+    private void schedulePrewarm() {
+        if (!MASK_SUPPORTED || mainHandler == null) return;
+        mainHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                prewarmMask();
+            }
+        }, MASK_PREWARM_DELAY_MS);
+    }
+
+    /**
+     * Briefly adds a 1x1 loader overlay to warm the render path (gradient-shader compilation and
+     * the first hardware-overlay composite, which are the process-global costs behind the
+     * first-press flash), then removes it. Drawn at full alpha in a corner rather than transparent
+     * or off-screen, because the renderer can skip a non-visible window entirely; 1px keeps it
+     * imperceptible while still forcing a real draw.
+     */
+    private void prewarmMask() {
+        if (!MASK_SUPPORTED || maskAttached || maskPrewarmView != null) return;
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (windowManager == null) return;
+        }
+        try {
+            LoaderView warm = new LoaderView(this);
+            warm.setCaptions(getString(R.string.loader_caption_loading),
+                    getString(R.string.loader_caption_ready));
+            warm.setLooping(false);
+            WindowManager.LayoutParams lp = maskLayoutParams();
+            lp.width = 1;
+            lp.height = 1;
+            windowManager.addView(warm, lp);
+            maskPrewarmView = warm;
+            maskPrewarmRemove = new Runnable() {
+                @Override
+                public void run() {
+                    maskPrewarmRemove = null;
+                    removePrewarm();
+                }
+            };
+            mainHandler.postDelayed(maskPrewarmRemove, MASK_PREWARM_MS);
+            Log.i(TAG, "Mask path prewarmed");
+        } catch (Exception e) {
+            Log.e(TAG, "Mask prewarm failed", e);
+            maskPrewarmView = null;
+        }
+    }
+
+    /** Removes the invisible prewarm overlay if present. */
+    private void removePrewarm() {
+        if (maskPrewarmRemove != null && mainHandler != null) {
+            mainHandler.removeCallbacks(maskPrewarmRemove);
+            maskPrewarmRemove = null;
+        }
+        if (maskPrewarmView != null) {
+            try {
+                if (windowManager != null) windowManager.removeView(maskPrewarmView);
+            } catch (Exception ignored) {
+            }
+            maskPrewarmView.stop();
+            maskPrewarmView = null;
         }
     }
 
@@ -1284,6 +1370,7 @@ public class HijackService extends AccessibilityService {
             mainHandler.removeCallbacks(maskGraceRunnable);
             maskGraceRunnable = null;
         }
+        removePrewarm();
         removeMask();
     }
 

@@ -59,6 +59,10 @@ public class LoaderView extends View {
     private static final float T_GONE = 4.86f; // the "a" is fully flicked off by here
     private static final float T_HOLD = 6.0f;  // one-shot hold frame ("Ready"), before the loop-fade dips to black
 
+    /** Global playback-speed multiplier. >1 plays the whole animation faster so the punchline
+     *  (the "a" flicked off, around T_GONE) lands well before the FOS7 launcher cuts the mask. */
+    private static final float SPEED = 1.25f;
+
     // ── Easing identifiers (only those scene.jsx actually uses) ───────────────
     private static final int LINEAR = 0, OUT_CUBIC = 1, OUT_QUAD = 2,
             INOUT_CUBIC = 3, INOUT_SINE = 4, OUT_BACK = 5, IN_CUBIC = 6;
@@ -282,7 +286,7 @@ public class LoaderView extends View {
      * sit on a finished frame until the target launcher's window finally appears.
      */
     private float currentTime() {
-        float t = (System.nanoTime() - startNanos) / 1_000_000_000f;
+        float t = (System.nanoTime() - startNanos) / 1_000_000_000f * SPEED;
         if (loop) {
             t = t % T_END;
             if (t < 0) t += T_END;
