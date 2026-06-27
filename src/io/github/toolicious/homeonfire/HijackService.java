@@ -357,11 +357,14 @@ public class HijackService extends AccessibilityService {
             currentForegroundPkg = pkgStr;
         }
 
-        // Tear down / cancel the masking overlay the moment the target window
-        // actually appears (matched on package). maskArmed is only ever set on
-        // Fire OS 6/7, so this is a no-op on Fire OS 8.
-        if (maskArmed && pkgStr != null && pkgStr.equals(maskTargetPkg)) {
-            onMaskTargetAppeared();
+        // Drive the masking-overlay teardown from the target's window events. We wait
+        // for the target's real content window (an app-specific class) rather than the
+        // first transitional one, so the mask is not lifted before the launcher has
+        // painted. maskArmed / maskTeardownPending are only set on Fire OS 6/7, so this
+        // is a no-op on Fire OS 8.
+        if ((maskArmed || maskTeardownPending) && pkgStr != null
+                && pkgStr.equals(maskTargetPkg)) {
+            onMaskTargetEvent(cls);
         }
 
         boolean isAmazonHome = AMAZON_LAUNCHER.equals(pkgStr)
@@ -1151,6 +1154,8 @@ public class HijackService extends AccessibilityService {
     private static final long MASK_PREWARM_DELAY_MS = 600L;
     /** How long the invisible prewarm overlay stays up (long enough to render a few frames). */
     private static final long MASK_PREWARM_MS = 160L;
+    /** Cap on waiting for the target's real content window before lifting the mask anyway. */
+    private static final long MASK_TEARDOWN_CAP_MS = 800L;
 
     private WindowManager windowManager;
     private LoaderView maskView;
@@ -1162,6 +1167,9 @@ public class HijackService extends AccessibilityService {
     /** Throwaway overlay added once at service start to warm the render path. */
     private LoaderView maskPrewarmView;
     private Runnable maskPrewarmRemove = null;
+    /** Set after the first target event arrives while the mask is up, until the real content window confirms the lift. */
+    private volatile boolean maskTeardownPending = false;
+    private Runnable maskTeardownCapRunnable = null;
 
     /**
      * Arms the masking overlay for a freshly issued redirect (called from
@@ -1193,22 +1201,64 @@ public class HijackService extends AccessibilityService {
     }
 
     /**
-     * The target launcher's window has appeared (matched on package in
-     * {@link #onAccessibilityEvent}). Cancel a pending show (fast launch, no mask
-     * needed) or fade out an already-shown mask. Fading rather than a hard cut
-     * because the window-state event can fire a frame or two before the target
-     * has painted, and a same-frame removal would briefly reveal a blank frame.
+     * Drives the mask teardown from the target's window-state events. The first target
+     * event cancels a pending grace-show (and, if the mask was never shown, finishes).
+     * If the mask is up, we do NOT lift it on that first event, because it can be a
+     * transitional decor/FrameLayout window that fires up to ~0.5s before the launcher's
+     * real content. Instead we wait for an event from the target's own (app-specific)
+     * content window, with {@link #MASK_TEARDOWN_CAP_MS} as a safety cap, then cross-fade.
      */
-    private void onMaskTargetAppeared() {
-        if (maskGraceRunnable != null && mainHandler != null) {
-            mainHandler.removeCallbacks(maskGraceRunnable);
-            maskGraceRunnable = null;
+    private void onMaskTargetEvent(CharSequence cls) {
+        if (maskArmed) {
+            maskArmed = false;
+            if (maskGraceRunnable != null && mainHandler != null) {
+                mainHandler.removeCallbacks(maskGraceRunnable);
+                maskGraceRunnable = null;
+            }
+            if (!maskAttached) {
+                // Fast launch: the target came up before the grace elapsed, so the mask
+                // was never shown. Nothing to tear down.
+                maskTargetPkg = null;
+                return;
+            }
+            maskTeardownPending = true;
+            scheduleTeardownCap();
         }
-        maskArmed = false;
-        if (maskAttached) {
+        if (maskTeardownPending && isRealContentClass(cls)) {
             fadeOutAndRemoveMask();
-        } else {
-            maskTargetPkg = null;
+        }
+    }
+
+    /**
+     * True for a window-state event whose class is app-specific rather than a generic
+     * {@code android.*} container. The target's transitional window reports e.g.
+     * {@code android.widget.FrameLayout}; its real content window reports its Activity class.
+     */
+    private static boolean isRealContentClass(CharSequence cls) {
+        return cls != null && !cls.toString().startsWith("android.");
+    }
+
+    /** Forces the fade once the cap elapses, in case the target never emits a non-android window. */
+    private void scheduleTeardownCap() {
+        cancelTeardownCap();
+        if (mainHandler == null) return;
+        maskTeardownCapRunnable = new Runnable() {
+            @Override
+            public void run() {
+                maskTeardownCapRunnable = null;
+                if (maskTeardownPending) {
+                    Log.i(TAG, "Mask teardown cap reached, fading without a confirmed content window");
+                    fadeOutAndRemoveMask();
+                }
+            }
+        };
+        mainHandler.postDelayed(maskTeardownCapRunnable, MASK_TEARDOWN_CAP_MS);
+    }
+
+    private void cancelTeardownCap() {
+        if (maskTeardownCapRunnable != null && mainHandler != null) {
+            mainHandler.removeCallbacks(maskTeardownCapRunnable);
+            maskTeardownCapRunnable = null;
         }
     }
 
@@ -1328,6 +1378,8 @@ public class HijackService extends AccessibilityService {
 
     /** Cross-fades the overlay out, then detaches it. */
     private void fadeOutAndRemoveMask() {
+        maskTeardownPending = false;
+        cancelTeardownCap();
         if (!maskAttached || maskView == null) {
             removeMask();
             return;
@@ -1344,6 +1396,8 @@ public class HijackService extends AccessibilityService {
     /** Idempotent teardown: cancels the timeout, detaches the view, resets state. */
     private void removeMask() {
         cancelMaskTimeout();
+        cancelTeardownCap();
+        maskTeardownPending = false;
         if (maskView != null) {
             try {
                 maskView.animate().cancel();
