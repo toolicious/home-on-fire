@@ -71,4 +71,17 @@
 
     <!-- Picker -->
     <string name="picker_title">Choose target app</string>
+
+    <!-- Beta: overlay-timing tuning rows (shown on all versions for layout
+         checking; the overlay itself only runs on Fire OS 7). -->
+    <string name="tuning_heading">Beta: overlay timing (Fire OS 7)</string>
+    <string name="tuning_grace">Start cover delay</string>
+    <string name="tuning_grace_tip">How soon the loading overlay covers the screen after you press ⌂ Home. Lower hides the Amazon-home flash sooner. Press ◀ ▶ to change. Takes effect on Fire OS 7.</string>
+    <string name="tuning_hold">End hold</string>
+    <string name="tuning_hold_tip">How long the overlay stays solid after the launcher window appears, before it fades. Higher gives the launcher time to draw, hiding the flash at the end. Press ◀ ▶ to change. Takes effect on Fire OS 7.</string>
+    <string name="tuning_fade">Fade</string>
+    <string name="tuning_fade_tip">Cross-fade duration when the overlay lifts. Press ◀ ▶ to change. Takes effect on Fire OS 7.</string>
+    <string name="tuning_reset">Reset timing to defaults</string>
+    <string name="tuning_reset_tip">Restore start delay 50 ms, end hold 500 ms, fade 200 ms.</string>
+    <string name="tuning_reset_done">Timing reset to defaults</string>
 </resources>

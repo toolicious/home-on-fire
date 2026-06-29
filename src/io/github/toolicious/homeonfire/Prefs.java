@@ -23,6 +23,17 @@ public class Prefs {
     private static final String KEY_VERBOSE = "verbose_logging";
     private static final String KEY_MENU_LP = "menu_longpress_launch";
 
+    // Beta overlay-timing tuning (milliseconds). Read live by HijackService on
+    // each redirect, written by the tuning rows in MainActivity. Only effective
+    // on Fire OS 6/7, where the masking overlay actually runs.
+    private static final String KEY_MASK_GRACE = "mask_grace_ms";
+    private static final String KEY_MASK_HOLD = "mask_hold_ms";
+    private static final String KEY_MASK_FADE = "mask_fade_ms";
+
+    public static final int DEFAULT_MASK_GRACE = 50;
+    public static final int DEFAULT_MASK_HOLD = 500;
+    public static final int DEFAULT_MASK_FADE = 200;
+
     /**
      * Empty by default; the user is expected to pick a target via the
      * configuration screen before anything is launched. The hijack,
@@ -88,5 +99,45 @@ public class Prefs {
 
     public void setMenuLongPressLaunch(boolean enabled) {
         sp.edit().putBoolean(KEY_MENU_LP, enabled).apply();
+    }
+
+    /** Start-cover grace before the masking overlay is shown (ms). */
+    public int getMaskGraceMs() {
+        return clamp(sp.getInt(KEY_MASK_GRACE, DEFAULT_MASK_GRACE), 0, 1000);
+    }
+
+    public void setMaskGraceMs(int ms) {
+        sp.edit().putInt(KEY_MASK_GRACE, ms).apply();
+    }
+
+    /** Opaque hold after the target window appears, before the overlay fades (ms). */
+    public int getMaskHoldMs() {
+        return clamp(sp.getInt(KEY_MASK_HOLD, DEFAULT_MASK_HOLD), 0, 3000);
+    }
+
+    public void setMaskHoldMs(int ms) {
+        sp.edit().putInt(KEY_MASK_HOLD, ms).apply();
+    }
+
+    /** Cross-fade duration when the overlay lifts (ms). */
+    public int getMaskFadeMs() {
+        return clamp(sp.getInt(KEY_MASK_FADE, DEFAULT_MASK_FADE), 0, 1000);
+    }
+
+    public void setMaskFadeMs(int ms) {
+        sp.edit().putInt(KEY_MASK_FADE, ms).apply();
+    }
+
+    /** Restores all three overlay-timing values to their defaults. */
+    public void resetMaskTuning() {
+        sp.edit()
+                .putInt(KEY_MASK_GRACE, DEFAULT_MASK_GRACE)
+                .putInt(KEY_MASK_HOLD, DEFAULT_MASK_HOLD)
+                .putInt(KEY_MASK_FADE, DEFAULT_MASK_FADE)
+                .apply();
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
     }
 }

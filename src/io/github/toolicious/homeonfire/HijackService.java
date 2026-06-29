@@ -1140,14 +1140,19 @@ public class HijackService extends AccessibilityService {
     // onUnbind are safety nets so the overlay can never strand on screen. Gated
     // to SDK_INT <= 28: Android 10+ (Fire OS 8) has no such delay.
 
-    /** True only where the Android-9 app-switch delay exists (Fire OS 6/7). */
+    /**
+     * True where the Android app-switch delay exists: API &lt;= 28, i.e. Fire OS 7 and
+     * older. Fire OS 8 (API 30) has no such delay and is excluded. Kept at &lt;= 28 rather
+     * than == 28 in case some Fire OS 6 variant runs the app, but note that Home on Fire
+     * likely does not work on Fire OS 6 at all for unrelated reasons (accessibility
+     * restrictions), so in practice this gates the masking to Fire OS 7.
+     */
     private static final boolean MASK_SUPPORTED = Build.VERSION.SDK_INT <= 28;
-    /** Grace after a redirect before showing the mask. Kept small: this only runs on Fire OS
-     *  6/7, where the launch is always deferred (the grace just adds Amazon-home visibility);
-     *  Fire OS 8, where a quick launch could otherwise flash it, is gated out entirely. */
-    private static final long MASK_GRACE_MS = 50L;
-    /** Cross-fade duration once the target window appears. */
-    private static final long MASK_FADE_MS = 200L;
+    // Start-cover grace, end-hold and cross-fade duration are tunable at runtime via
+    // Prefs (the beta overlay-timing rows): prefs.getMaskGraceMs() / getMaskHoldMs() /
+    // getMaskFadeMs(), defaulting to 50 / 500 / 200 ms. The grace is read live so the
+    // tester can probe the start flash; the hold gives the launcher time to paint before
+    // the fade, closing the end flash.
     /** Safety net: force-remove the overlay if the target window never announces itself. */
     private static final long MASK_HARD_TIMEOUT_MS = 6_500L;
     /** Delay after the service connects before prewarming the overlay path. */
@@ -1170,6 +1175,8 @@ public class HijackService extends AccessibilityService {
     /** Set after the first target event arrives while the mask is up, until the real content window confirms the lift. */
     private volatile boolean maskTeardownPending = false;
     private Runnable maskTeardownCapRunnable = null;
+    /** Pending opaque-hold between the teardown trigger and the cross-fade. */
+    private Runnable maskHoldRunnable = null;
 
     /**
      * Arms the masking overlay for a freshly issued redirect (called from
@@ -1197,7 +1204,7 @@ public class HijackService extends AccessibilityService {
                 }
             }
         };
-        mainHandler.postDelayed(maskGraceRunnable, MASK_GRACE_MS);
+        mainHandler.postDelayed(maskGraceRunnable, prefs.getMaskGraceMs());
     }
 
     /**
@@ -1225,7 +1232,7 @@ public class HijackService extends AccessibilityService {
             scheduleTeardownCap();
         }
         if (maskTeardownPending && isRealContentClass(cls)) {
-            fadeOutAndRemoveMask();
+            holdThenFadeMask();
         }
     }
 
@@ -1248,7 +1255,7 @@ public class HijackService extends AccessibilityService {
                 maskTeardownCapRunnable = null;
                 if (maskTeardownPending) {
                     Log.i(TAG, "Mask teardown cap reached, fading without a confirmed content window");
-                    fadeOutAndRemoveMask();
+                    holdThenFadeMask();
                 }
             }
         };
@@ -1376,15 +1383,48 @@ public class HijackService extends AccessibilityService {
         }
     }
 
-    /** Cross-fades the overlay out, then detaches it. */
-    private void fadeOutAndRemoveMask() {
+    /**
+     * Keeps the overlay fully opaque for the configured End-hold after the teardown
+     * trigger, then cross-fades. The window-state event that triggers teardown can
+     * precede the launcher's first painted frame; holding opaque for that span means
+     * the fade reveals the launcher rather than the Amazon home still behind the
+     * overlay. Reached only after the target has appeared (real content event or the
+     * teardown cap), so the hard timeout is repurposed here as a teardown backstop.
+     */
+    private void holdThenFadeMask() {
         maskTeardownPending = false;
         cancelTeardownCap();
+        cancelMaskHold();
         if (!maskAttached || maskView == null) {
             removeMask();
             return;
         }
-        maskView.animate().alpha(0f).setDuration(MASK_FADE_MS)
+        long hold = prefs.getMaskHoldMs();
+        long fade = prefs.getMaskFadeMs();
+        // Backstop: guarantee the overlay is gone within the hold + fade span even if a
+        // dropped animation callback would otherwise leave it up.
+        rescheduleMaskTimeout(hold + fade + 400L);
+        if (hold <= 0L || mainHandler == null) {
+            fadeMask();
+            return;
+        }
+        maskHoldRunnable = new Runnable() {
+            @Override
+            public void run() {
+                maskHoldRunnable = null;
+                fadeMask();
+            }
+        };
+        mainHandler.postDelayed(maskHoldRunnable, hold);
+    }
+
+    /** Cross-fades the overlay out, then detaches it. */
+    private void fadeMask() {
+        if (!maskAttached || maskView == null) {
+            removeMask();
+            return;
+        }
+        maskView.animate().alpha(0f).setDuration(prefs.getMaskFadeMs())
                 .withEndAction(new Runnable() {
                     @Override
                     public void run() {
@@ -1393,10 +1433,19 @@ public class HijackService extends AccessibilityService {
                 }).start();
     }
 
+    /** Cancels a pending opaque-hold scheduled before the fade. */
+    private void cancelMaskHold() {
+        if (maskHoldRunnable != null && mainHandler != null) {
+            mainHandler.removeCallbacks(maskHoldRunnable);
+            maskHoldRunnable = null;
+        }
+    }
+
     /** Idempotent teardown: cancels the timeout, detaches the view, resets state. */
     private void removeMask() {
         cancelMaskTimeout();
         cancelTeardownCap();
+        cancelMaskHold();
         maskTeardownPending = false;
         if (maskView != null) {
             try {
@@ -1449,6 +1498,23 @@ public class HijackService extends AccessibilityService {
             mainHandler.removeCallbacks(maskTimeoutRunnable);
             maskTimeoutRunnable = null;
         }
+    }
+
+    /** Re-arms the mask removal backstop with a specific delay (used once teardown begins). */
+    private void rescheduleMaskTimeout(long delayMs) {
+        cancelMaskTimeout();
+        if (mainHandler == null) return;
+        maskTimeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                maskTimeoutRunnable = null;
+                if (maskAttached) {
+                    Log.i(TAG, "Mask teardown backstop reached, removing");
+                    removeMask();
+                }
+            }
+        };
+        mainHandler.postDelayed(maskTimeoutRunnable, delayMs);
     }
 
     @Override

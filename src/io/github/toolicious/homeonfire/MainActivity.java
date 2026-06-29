@@ -89,6 +89,7 @@ public class MainActivity extends Activity {
 
         content.addView(buildTargetRow(), targetRowLp());
         addSwitches(content);
+        addTuningRows(content);
 
         scroll.addView(content);
         // ScrollView takes remaining vertical space (weight = 1) so
@@ -419,6 +420,136 @@ public class MainActivity extends Activity {
     /** Functional-interface stand-in (we target a Java level without lambdas). */
     private interface PrefSetter {
         void set(boolean value);
+    }
+
+    /** Get/set bridge for an int-valued pref, so one stepper builder serves all rows. */
+    private interface IntPref {
+        int get();
+        void set(int value);
+    }
+
+    /**
+     * Beta overlay-timing section: a heading plus three d-pad steppers (start cover
+     * delay, end hold, fade) and a reset row, placed below the switch rows. Shown on
+     * all Fire OS versions so the layout can be checked anywhere; the values only take
+     * effect on Fire OS 6/7, where the masking overlay actually runs. Each stepper is
+     * adjusted with ◀ / ▶ and writes straight to prefs, which HijackService reads live
+     * on the next Home press (no service restart).
+     */
+    private void addTuningRows(LinearLayout content) {
+        TextView heading = new TextView(this);
+        heading.setText(R.string.tuning_heading);
+        heading.setTextSize(13);
+        heading.setAllCaps(true);
+        heading.setTextColor(Colors.NEUTRAL);
+        heading.setPadding(dp(16), dp(20), dp(16), dp(4));
+        content.addView(heading, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final TextView vGrace = makeStepperRow(content,
+                getString(R.string.tuning_grace), getString(R.string.tuning_grace_tip),
+                0, 300, 10, new IntPref() {
+                    @Override public int get() { return prefs.getMaskGraceMs(); }
+                    @Override public void set(int v) { prefs.setMaskGraceMs(v); }
+                });
+        final TextView vHold = makeStepperRow(content,
+                getString(R.string.tuning_hold), getString(R.string.tuning_hold_tip),
+                0, 1500, 50, new IntPref() {
+                    @Override public int get() { return prefs.getMaskHoldMs(); }
+                    @Override public void set(int v) { prefs.setMaskHoldMs(v); }
+                });
+        final TextView vFade = makeStepperRow(content,
+                getString(R.string.tuning_fade), getString(R.string.tuning_fade_tip),
+                0, 600, 25, new IntPref() {
+                    @Override public int get() { return prefs.getMaskFadeMs(); }
+                    @Override public void set(int v) { prefs.setMaskFadeMs(v); }
+                });
+
+        LinearLayout reset = new LinearLayout(this);
+        reset.setOrientation(LinearLayout.HORIZONTAL);
+        reset.setPadding(dp(16), dp(12), dp(16), dp(12));
+        reset.setGravity(Gravity.CENTER_VERTICAL);
+        reset.setFocusable(true);
+        reset.setClickable(true);
+        reset.setBackground(getDrawable(R.drawable.row_focus_bg));
+        TextView resetTv = new TextView(this);
+        resetTv.setText(R.string.tuning_reset);
+        resetTv.setTextSize(18);
+        resetTv.setTextColor(Colors.NEUTRAL);
+        reset.addView(resetTv, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        final TextView fGrace = vGrace, fHold = vHold, fFade = vFade;
+        reset.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                prefs.resetMaskTuning();
+                fGrace.setText(stepperLabel(prefs.getMaskGraceMs()));
+                fHold.setText(stepperLabel(prefs.getMaskHoldMs()));
+                fFade.setText(stepperLabel(prefs.getMaskFadeMs()));
+                Toast.makeText(MainActivity.this,
+                        getString(R.string.tuning_reset_done), Toast.LENGTH_SHORT).show();
+            }
+        });
+        attachTip(reset, getString(R.string.tuning_reset_tip));
+        content.addView(reset);
+    }
+
+    /**
+     * Builds one stepper row: label on the left, current value on the right shown as
+     * "◀ N ms ▶". The row is focusable; ◀ / ▶ (d-pad left/right) decrement/increment by
+     * {@code step}, clamped to [min, max], and persist via {@code pref}. Returns the
+     * value view so the reset row can refresh it.
+     */
+    private TextView makeStepperRow(LinearLayout content, String label, String tip,
+                                    final int min, final int max, final int step,
+                                    final IntPref pref) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setFocusable(true);
+        row.setBackground(getDrawable(R.drawable.row_focus_bg));
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(18);
+        tv.setTextColor(Colors.NEUTRAL);
+        row.addView(tv, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        final TextView value = new TextView(this);
+        value.setTextSize(18);
+        value.setTextColor(Colors.WHITE);
+        value.setMinWidth(dp(128));
+        value.setGravity(Gravity.CENTER);
+        value.setText(stepperLabel(pref.get()));
+        row.addView(value, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        row.setOnKeyListener(new View.OnKeyListener() {
+            @Override
+            public boolean onKey(View v, int keyCode, android.view.KeyEvent e) {
+                boolean isLeft = keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT;
+                boolean isRight = keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
+                if (!isLeft && !isRight) return false;
+                if (e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                    int next = pref.get() + (isLeft ? -step : step);
+                    if (next < min) next = min;
+                    if (next > max) next = max;
+                    pref.set(next);
+                    value.setText(stepperLabel(next));
+                }
+                return true; // own left/right entirely so focus never moves off the row
+            }
+        });
+        attachTip(row, tip);
+        content.addView(row);
+        return value;
+    }
+
+    /** Formats a stepper value with the ◀ / ▶ affordance, e.g. "◀  500 ms  ▶". */
+    private String stepperLabel(int ms) {
+        return "◀  " + ms + " ms  ▶";
     }
 
     /**
