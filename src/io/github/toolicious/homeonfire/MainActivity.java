@@ -62,6 +62,13 @@ public class MainActivity extends Activity {
     /** Round "show log" button on the right of the verbose row; visible only while verbose logging is on. */
     private View logBtn;
 
+    /** Hidden beta overlay-timing section; revealed by a long-press on the verbose row. */
+    private View tuningSection;
+    /** The focusable verbose-logging row, used for focus return when hiding the section. */
+    private View verboseRow;
+    /** Hold time on the verbose row that toggles the overlay-timing section (fires while held). */
+    private static final long TUNING_REVEAL_HOLD_MS = 3000L;
+
     /**
      * Flag flipped during programmatic switch updates (e.g. in
      * {@link #refresh}) so the onCheckedChange listeners don't think
@@ -218,6 +225,63 @@ public class MainActivity extends Activity {
     }
 
     /**
+     * Holding OK on the Verbose-logging row for {@link #TUNING_REVEAL_HOLD_MS} reveals
+     * (or hides) the otherwise hidden overlay-timing section, a support aid for diagnosing
+     * the loading-overlay flash on Fire OS 7. The toggle fires the moment the hold time is
+     * reached, while the key is still held, not on release; the long delay keeps it from
+     * happening by accident. A short press still toggles verbose logging. The CENTER key is
+     * fully owned here so the row's own click never double-fires for the d-pad.
+     */
+    private class VerboseLongPressListener implements View.OnKeyListener {
+        private boolean counting = false;
+        private boolean fired = false;
+        private final Runnable reveal = new Runnable() {
+            @Override
+            public void run() {
+                fired = true;
+                toggleTuningSection();
+            }
+        };
+
+        @Override
+        public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
+            boolean isOkKey = keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+                    || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+            if (!isOkKey) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                if (event.getRepeatCount() == 0) {
+                    counting = true;
+                    fired = false;
+                    v.removeCallbacks(reveal);
+                    v.postDelayed(reveal, TUNING_REVEAL_HOLD_MS);
+                }
+                return true; // own CENTER so the row's click never fires for the d-pad
+            }
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP) {
+                v.removeCallbacks(reveal);
+                if (counting && !fired && v.isEnabled()) {
+                    verboseSwitch.toggle(); // short press: same as a normal tap on the row
+                }
+                counting = false;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /** Shows the hidden overlay-timing section (focus moves into it), or hides it again. */
+    private void toggleTuningSection() {
+        if (tuningSection == null) return;
+        if (tuningSection.getVisibility() == View.VISIBLE) {
+            tuningSection.setVisibility(View.GONE);
+            if (verboseRow != null) verboseRow.requestFocus();
+        } else {
+            tuningSection.setVisibility(View.VISIBLE);
+            tuningSection.requestFocus();
+        }
+    }
+
+    /**
      * Round launch button on the right of the target row. Reuses the
      * header info-button drawable + text-color selector for visual
      * parity (translucent white disc, white-on-focus, inverted text).
@@ -342,6 +406,8 @@ public class MainActivity extends Activity {
                 if (row.isEnabled()) sw.toggle();
             }
         });
+        row.setOnKeyListener(new VerboseLongPressListener());
+        verboseRow = row;
         attachTip(row, getString(R.string.switch_verbose_tip));
 
         outer.addView(row, new LinearLayout.LayoutParams(
@@ -437,28 +503,32 @@ public class MainActivity extends Activity {
      * on the next Home press (no service restart).
      */
     private void addTuningRows(LinearLayout content) {
+        final LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        section.setVisibility(View.GONE); // revealed by a long-press on the verbose row
+
         TextView heading = new TextView(this);
         heading.setText(R.string.tuning_heading);
         heading.setTextSize(13);
         heading.setAllCaps(true);
         heading.setTextColor(Colors.NEUTRAL);
         heading.setPadding(dp(16), dp(20), dp(16), dp(4));
-        content.addView(heading, new LinearLayout.LayoutParams(
+        section.addView(heading, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        final TextView vGrace = makeStepperRow(content,
+        final TextView vGrace = makeStepperRow(section,
                 getString(R.string.tuning_grace), getString(R.string.tuning_grace_tip),
                 0, 300, 10, new IntPref() {
                     @Override public int get() { return prefs.getMaskGraceMs(); }
                     @Override public void set(int v) { prefs.setMaskGraceMs(v); }
                 });
-        final TextView vHold = makeStepperRow(content,
+        final TextView vHold = makeStepperRow(section,
                 getString(R.string.tuning_hold), getString(R.string.tuning_hold_tip),
                 0, 1500, 50, new IntPref() {
                     @Override public int get() { return prefs.getMaskHoldMs(); }
                     @Override public void set(int v) { prefs.setMaskHoldMs(v); }
                 });
-        final TextView vFade = makeStepperRow(content,
+        final TextView vFade = makeStepperRow(section,
                 getString(R.string.tuning_fade), getString(R.string.tuning_fade_tip),
                 0, 600, 25, new IntPref() {
                     @Override public int get() { return prefs.getMaskFadeMs(); }
@@ -491,7 +561,10 @@ public class MainActivity extends Activity {
             }
         });
         attachTip(reset, getString(R.string.tuning_reset_tip));
-        content.addView(reset);
+        section.addView(reset);
+
+        tuningSection = section;
+        content.addView(section);
     }
 
     /**
