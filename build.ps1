@@ -162,9 +162,15 @@ Get-ChildItem -Recurse -Filter *.class "$BuildDir\classes" -ErrorAction Silently
 if ($LASTEXITCODE -ne 0) { throw "javac failed." }
 
 # --- d8 ------------------------------------------------------------------
+# Bundle classes into a jar first, then hand d8 a single input. Listing every
+# .class file on the command line overflows the Windows 8191-char limit once the
+# class count grows past a certain point.
 Write-Host "d8..."
-$classFiles = Get-ChildItem -Recurse -Filter *.class "$BuildDir\classes" | ForEach-Object { $_.FullName }
-& $D8 --lib $AndroidJar --output "$BuildDir\dex" @classFiles
+$ClassesJar = "$BuildDir\classes.jar"
+Remove-Item -Force $ClassesJar -ErrorAction SilentlyContinue
+& $Jar cf $ClassesJar -C "$BuildDir\classes" .
+if ($LASTEXITCODE -ne 0) { throw "jar (classes) failed." }
+& $D8 --lib $AndroidJar --output "$BuildDir\dex" $ClassesJar
 if ($LASTEXITCODE -ne 0) { throw "d8 failed." }
 
 # --- Pack dex into apk --------------------------------------------------
