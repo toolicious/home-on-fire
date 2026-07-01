@@ -5,7 +5,8 @@
 <p align="center">
   <a href="https://github.com/toolicious/home-on-fire/releases/latest"><img src="https://img.shields.io/github/v/release/toolicious/home-on-fire?label=release" alt="Latest release"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/toolicious/home-on-fire" alt="License"></a>
-  <img src="https://img.shields.io/badge/platform-Fire%20OS%208%2B-B61414" alt="Fire OS 8+">
+  <img src="https://img.shields.io/badge/platform-Fire%20OS%208-B61414" alt="Fire OS 8">
+  <img src="https://img.shields.io/badge/Fire%20OS%207-beta-orange" alt="Fire OS 7: beta">
 </p>
 
 # Home on Fire
@@ -17,7 +18,8 @@ at device boot, so the Fire TV wakes up on your launcher instead
 of Amazon's home screen.
 
 Unlike older launcher-replacement tools, **Home on Fire** works
-on current Fire OS 8.x (as of May 2026) because it redirects the
+on current Fire OS 8.x (as of May 2026), and on Fire OS 7 in beta
+(see [Compatibility](#compatibility)), because it redirects the
 <kbd>⌂ Home</kbd> button rather than trying to override the home activity itself.
 
 <!-- App configuration screen -->
@@ -77,10 +79,24 @@ analytics, no data collection of any kind. See
 
 ## Compatibility
 
-**Supported: Fire OS 8.** Built and tested against Fire OS 8.1.6.9
+**Supported: Fire OS 8.** Built and tested against Fire OS 8.1.7.4
 (post-September-2025 patch) on an Amazon Ember TV. Should also
 work on older Fire OS 8.x builds out of the box. The app targets
 Android API 34 with a minimum of API 21.
+
+**Fire OS 7 (Android 9): beta.** Verified on Fire OS 7.7.1.4
+(community-tested), but it needs wider testing on more devices before
+it can be called fully supported. The redirect also behaves differently
+here: Android 9 holds back a background app launch for about 5 seconds
+after Home is pressed (the app-switch lock), so your target can only
+appear ~5 seconds later. Home on Fire covers that gap with a short
+loading animation that fades into your launcher, so instead of Amazon's
+home for 5 seconds you get a loading screen that hands off to your
+launcher. Fire OS 8 has no such delay, so the animation does not appear
+there.
+
+**Fire OS 6 (Android 7.1) and older: not supported.** Tested on
+Fire OS 6.7.1.1 and the redirect does not work there.
 
 **Not supported: Vega OS.** Since October 2025 Amazon has started
 rolling out a new **Vega OS** (a Linux-based system built on
@@ -333,10 +349,12 @@ Manual pipeline if you'd rather not use the script:
 
 ## Known limitations
 
-- **The 250 ms launcher flash** at every <kbd>⌂ Home</kbd> press is intrinsic
-  to how the redirect works (we react to the launcher having
-  already become foreground). Removing it would require the
-  approaches Amazon has closed.
+- **On Fire OS 8, a ~250 ms flash of Amazon's home** appears at every
+  <kbd>⌂ Home</kbd> press, intrinsic to how the redirect works (we react
+  to the launcher having already become foreground). Removing it would
+  require the approaches Amazon has closed. On Fire OS 7 the launch is
+  instead delayed ~5 s and hidden by the loading animation (see
+  [Compatibility](#compatibility)).
 - **`Settings → Accessibility` may not work** on the specific Fire
   OS build you're on; the `WRITE_SECURE_SETTINGS` grant is the
   reliable way to enable the service. The app shows the exact
