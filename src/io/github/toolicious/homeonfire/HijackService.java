@@ -1418,7 +1418,7 @@ public class HijackService extends AccessibilityService {
         mainHandler.postDelayed(maskHoldRunnable, hold);
     }
 
-    /** Cross-fades the overlay out, then detaches it. */
+    /** Cross-fades the overlay out uniformly (revealing the launcher underneath), then detaches it. */
     private void fadeMask() {
         if (!maskAttached || maskView == null) {
             removeMask();

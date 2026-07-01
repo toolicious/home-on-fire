@@ -30,9 +30,9 @@ public class Prefs {
     private static final String KEY_MASK_HOLD = "mask_hold_ms";
     private static final String KEY_MASK_FADE = "mask_fade_ms";
 
-    public static final int DEFAULT_MASK_GRACE = 50;
-    public static final int DEFAULT_MASK_HOLD = 500;
-    public static final int DEFAULT_MASK_FADE = 200;
+    public static final int DEFAULT_MASK_GRACE = 0;
+    public static final int DEFAULT_MASK_HOLD = 700;
+    public static final int DEFAULT_MASK_FADE = 100;
 
     /**
      * Empty by default; the user is expected to pick a target via the

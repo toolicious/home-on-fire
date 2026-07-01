@@ -107,6 +107,8 @@ public class LoaderView extends View {
     private boolean running = false;
     private boolean loop = true;
     private long startNanos = 0L;
+    private OnEndListener onEndListener;
+    private boolean endNotified = false;
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint glyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -148,9 +150,15 @@ public class LoaderView extends View {
 
     public void setLooping(boolean l) { loop = l; }
 
+    /** Notified once when a one-shot (non-looping) run reaches its final hold frame. */
+    public interface OnEndListener { void onEnd(); }
+
+    public void setOnEndListener(OnEndListener l) { onEndListener = l; }
+
     public void start() {
         if (running) return;
         running = true;
+        endNotified = false;
         startNanos = System.nanoTime();
         postInvalidateOnAnimation();
     }
@@ -276,7 +284,19 @@ public class LoaderView extends View {
         // Keep animating while looping; in one-shot mode stop re-posting once
         // the hold frame is reached so a static "Ready" frame doesn't spin the
         // CPU at 60 fps.
-        if (running && (loop || t < T_HOLD)) postInvalidateOnAnimation();
+        if (running && (loop || t < T_HOLD)) {
+            postInvalidateOnAnimation();
+        } else if (running && !loop && !endNotified) {
+            endNotified = true;
+            if (onEndListener != null) {
+                post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (onEndListener != null) onEndListener.onEnd();
+                    }
+                });
+            }
+        }
     }
 
     /**

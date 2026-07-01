@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     package="io.github.toolicious.homeonfire"
-    android:versionCode="108"
-    android:versionName="1.0.107">
+    android:versionCode="114"
+    android:versionName="1.1.2">
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -54,7 +54,8 @@
 
         <activity
             android:name=".LoaderPreviewActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen" />
 
         <service
             android:name=".HijackService"
