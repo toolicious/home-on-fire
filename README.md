@@ -95,6 +95,11 @@ home for 5 seconds you get a loading screen that hands off to your
 launcher. Fire OS 8 has no such delay, so the animation does not appear
 there.
 
+<p align="center">
+  <img src="docs/loading-animation.png" alt="Home on Fire loading animation" width="640"><br>
+  <em>The loading animation shown while your launcher starts on Fire OS 7.</em>
+</p>
+
 **Fire OS 6 (Android 7.1) and older: not supported.** Tested on
 Fire OS 6.7.1.1 and the redirect does not work there.
 
