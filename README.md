@@ -79,12 +79,14 @@ analytics, no data collection of any kind. See
 
 ## Compatibility
 
-**Supported: Fire OS 8.** Built and tested against Fire OS 8.1.7.4
+**<ins>Fire OS 8</ins>: Supported**<br>
+Built and tested against Fire OS 8.1.7.4
 (post-September-2025 patch) on an Amazon Ember TV. Should also
 work on older Fire OS 8.x builds out of the box. The app targets
 Android API 34 with a minimum of API 21.
 
-**Fire OS 7 (Android 9): beta.** Verified on Fire OS 7.7.1.4
+**<ins>Fire OS 7</ins>: Beta**<br>
+Verified on Fire OS 7.7.1.4
 (community-tested), but it needs wider testing on more devices before
 it can be called fully supported. The redirect also behaves differently
 here: Android 9 holds back a background app launch for about 5 seconds
@@ -100,10 +102,12 @@ there.
   <em>The loading animation shown while your launcher starts on Fire OS 7.</em>
 </p>
 
-**Fire OS 6 (Android 7.1) and older: not supported.** Tested on
+**<ins>Fire OS 6 and older:</ins> Not supported**<br>
+Tested on
 Fire OS 6.7.1.1 and the redirect does not work there.
 
-**Not supported: Vega OS.** Since October 2025 Amazon has started
+**<ins>Vega OS</ins>: Not supported**<br>
+Since October 2025 Amazon has started
 rolling out a new **Vega OS** (a Linux-based system built on
 React Native, not Android) on new Fire TV devices, starting with
 the *Fire TV Stick 4K Select*. All future Fire TV Sticks are
