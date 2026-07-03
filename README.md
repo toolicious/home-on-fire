@@ -85,7 +85,7 @@ Built and tested against Fire OS 8.1.7.4
 work on older Fire OS 8.x builds out of the box. The app targets
 Android API 34 with a minimum of API 21.
 
-**<ins>Fire OS 7</ins>: Beta**<br>
+**<ins>Fire OS 7</ins>: Supported (Beta)**<br>
 Verified on Fire OS 7.7.1.4
 (community-tested), but it needs wider testing on more devices before
 it can be called fully supported. The redirect also behaves differently
