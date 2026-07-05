@@ -247,7 +247,16 @@ public class MainActivity extends Activity {
         public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
             boolean isOkKey = keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
                     || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
-            if (!isOkKey) return false;
+            if (!isOkKey) {
+                // Key rollover: another key pressed while OK is held moves focus away,
+                // so the matching ACTION_UP would land on a different view and never
+                // cancel the pending reveal. Abort the hold before focus moves on.
+                if (counting && event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                    v.removeCallbacks(reveal);
+                    counting = false;
+                }
+                return false;
+            }
             if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
                 if (event.getRepeatCount() == 0) {
                     counting = true;
@@ -259,8 +268,10 @@ public class MainActivity extends Activity {
             }
             if (event.getAction() == android.view.KeyEvent.ACTION_UP) {
                 v.removeCallbacks(reveal);
-                if (counting && !fired && v.isEnabled()) {
-                    verboseSwitch.toggle(); // short press: same as a normal tap on the row
+                // isCanceled(): a focus-stealing window (system dialog, the Home
+                // redirect) synthesizes a canceled UP, which is not a deliberate press.
+                if (counting && !fired && !event.isCanceled()) {
+                    v.performClick(); // short press: same as a normal tap on the row
                 }
                 counting = false;
                 return true;
@@ -535,36 +546,45 @@ public class MainActivity extends Activity {
                     @Override public void set(int v) { prefs.setMaskFadeMs(v); }
                 });
 
-        LinearLayout reset = new LinearLayout(this);
-        reset.setOrientation(LinearLayout.HORIZONTAL);
-        reset.setPadding(dp(16), dp(12), dp(16), dp(12));
-        reset.setGravity(Gravity.CENTER_VERTICAL);
-        reset.setFocusable(true);
-        reset.setClickable(true);
-        reset.setBackground(getDrawable(R.drawable.row_focus_bg));
-        TextView resetTv = new TextView(this);
-        resetTv.setText(R.string.tuning_reset);
-        resetTv.setTextSize(18);
-        resetTv.setTextColor(Colors.NEUTRAL);
-        reset.addView(resetTv, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        final TextView fGrace = vGrace, fHold = vHold, fFade = vFade;
+        LinearLayout reset = makeTuningRowShell(getString(R.string.tuning_reset));
         reset.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 prefs.resetMaskTuning();
-                fGrace.setText(stepperLabel(prefs.getMaskGraceMs()));
-                fHold.setText(stepperLabel(prefs.getMaskHoldMs()));
-                fFade.setText(stepperLabel(prefs.getMaskFadeMs()));
+                vGrace.setText(stepperLabel(prefs.getMaskGraceMs()));
+                vHold.setText(stepperLabel(prefs.getMaskHoldMs()));
+                vFade.setText(stepperLabel(prefs.getMaskFadeMs()));
                 Toast.makeText(MainActivity.this,
                         getString(R.string.tuning_reset_done), Toast.LENGTH_SHORT).show();
             }
         });
-        attachTip(reset, getString(R.string.tuning_reset_tip));
+        attachTip(reset, getString(R.string.tuning_reset_tip,
+                Prefs.DEFAULT_MASK_GRACE, Prefs.DEFAULT_MASK_HOLD, Prefs.DEFAULT_MASK_FADE));
         section.addView(reset);
 
         tuningSection = section;
         content.addView(section);
+    }
+
+    /**
+     * Focusable row shell shared by the tuning rows: padded horizontal layout with
+     * the focus background and a weight-1 label on the left. Callers append their
+     * own right-hand content and listeners.
+     */
+    private LinearLayout makeTuningRowShell(String label) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setFocusable(true);
+        row.setBackground(getDrawable(R.drawable.row_focus_bg));
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(18);
+        tv.setTextColor(Colors.NEUTRAL);
+        row.addView(tv, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        return row;
     }
 
     /**
@@ -576,19 +596,7 @@ public class MainActivity extends Activity {
     private TextView makeStepperRow(LinearLayout content, String label, String tip,
                                     final int min, final int max, final int step,
                                     final IntPref pref) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(dp(16), dp(12), dp(16), dp(12));
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setFocusable(true);
-        row.setBackground(getDrawable(R.drawable.row_focus_bg));
-
-        TextView tv = new TextView(this);
-        tv.setText(label);
-        tv.setTextSize(18);
-        tv.setTextColor(Colors.NEUTRAL);
-        row.addView(tv, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout row = makeTuningRowShell(label);
 
         final TextView value = new TextView(this);
         value.setTextSize(18);
@@ -606,11 +614,16 @@ public class MainActivity extends Activity {
                 boolean isRight = keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT;
                 if (!isLeft && !isRight) return false;
                 if (e.getAction() == android.view.KeyEvent.ACTION_DOWN) {
-                    int next = pref.get() + (isLeft ? -step : step);
+                    int cur = pref.get();
+                    int next = cur + (isLeft ? -step : step);
                     if (next < min) next = min;
                     if (next > max) next = max;
-                    pref.set(next);
-                    value.setText(stepperLabel(next));
+                    // Skip no-op writes: a held key repeats at ~25 Hz and would
+                    // otherwise re-persist the clamped edge value on every repeat.
+                    if (next != cur) {
+                        pref.set(next);
+                        value.setText(stepperLabel(next));
+                    }
                 }
                 return true; // own left/right entirely so focus never moves off the row
             }
@@ -906,11 +919,20 @@ public class MainActivity extends Activity {
         setRowEnabled(verboseSwitch, accessOn);
         setRowEnabled(menuLpSwitch, accessOn);
         updateLogButtonVisibility();
+        // The tuning section's only reveal/hide anchor is the verbose row, which is
+        // unfocusable while the service is off; collapse the section so it cannot
+        // get stuck open with no way left to close it.
+        if (!accessOn && tuningSection != null
+                && tuningSection.getVisibility() == View.VISIBLE) {
+            tuningSection.setVisibility(View.GONE);
+        }
         // If the row that held d-pad focus just became non-focusable
         // (e.g. the service was disabled via ADB while a feature row was
-        // focused, picked up on resume), move focus to the accessibility
-        // row, which is never disabled, so the screen doesn't lose focus.
-        if (focusedBefore != null && !focusedBefore.isFocusable()) {
+        // focused, picked up on resume) or vanished with the collapsed
+        // tuning section, move focus to the accessibility row, which is
+        // never disabled, so the screen doesn't lose focus.
+        if (focusedBefore != null
+                && (!focusedBefore.isFocusable() || !focusedBefore.isShown())) {
             View accessRow = (View) accessSwitch.getParent();
             if (accessRow != null) accessRow.requestFocus();
         }

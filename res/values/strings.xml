@@ -82,6 +82,7 @@
     <string name="tuning_fade">Fade</string>
     <string name="tuning_fade_tip">Cross-fade duration when the overlay lifts. Press ◀ ▶ to change. Takes effect on Fire OS 7.</string>
     <string name="tuning_reset">Reset timing to defaults</string>
-    <string name="tuning_reset_tip">Restore start delay 50 ms, end hold 500 ms, fade 200 ms.</string>
+    <!-- Filled from Prefs.DEFAULT_MASK_GRACE / HOLD / FADE so it can never drift from the code. -->
+    <string name="tuning_reset_tip">Restore start delay %1$d ms, end hold %2$d ms, fade %3$d ms.</string>
     <string name="tuning_reset_done">Timing reset to defaults</string>
 </resources>

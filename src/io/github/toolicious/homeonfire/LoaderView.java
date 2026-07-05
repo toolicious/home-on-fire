@@ -37,9 +37,11 @@ import java.util.Locale;
  *    gradients instead of {@code BlurMaskFilter}/{@code setShadowLayer}, so the
  *    view stays fully hardware-accelerated at 60 fps on Fire OS 7 (API 28).
  *
- * For the preview it loops; the loop seam dips to black exactly as in the
- * source. The real overlay will play it once and tear down on the target's
- * window-state event instead of looping.
+ * Every current use plays it once ({@code setLooping(false)}): the Fire OS 7
+ * masking overlay is torn down on the target's window-state event, and the
+ * easter-egg preview fades itself out at the end (via {@link OnEndListener}).
+ * Seamless looping, with the seam's dip to black exactly as in the source,
+ * stays available via {@code setLooping(true)}.
  */
 public class LoaderView extends View {
 
@@ -67,12 +69,15 @@ public class LoaderView extends View {
     private static final int LINEAR = 0, OUT_CUBIC = 1, OUT_QUAD = 2,
             INOUT_CUBIC = 3, INOUT_SINE = 4, OUT_BACK = 5, IN_CUBIC = 6;
 
-    // ── Choreography keyframe tables (verbatim from scene.jsx) ────────────────
+    // ── Choreography keyframe tables (from scene.jsx) ─────────────────────────
     // Horizontal centre of the "a": barges in from the right, shoved back three
     // times, creeps to its closest point, then the cursor flings it off-screen.
+    // Deviation from the source: the fly-in segment (0.55-1.15) is LINEAR, not
+    // ease-out, so the "a" arrives at full speed and only brakes in the recoil
+    // AFTER the first impact; braking before contact made the collision read late.
     private static final float[] AX_T = {0.00f, 0.55f, 1.15f, 1.55f, 2.10f, 2.45f, 2.95f, 3.25f, 3.80f, 4.30f, 4.58f, T_GONE, T_END};
     private static final float[] AX_V = {2360f, 2360f, 1205f, 1520f, 1070f, 1370f, 1035f, 1245f,  980f,  928f,  928f,  3160f, 3160f};
-    private static final int[]   AX_E = {LINEAR, OUT_CUBIC, OUT_QUAD, INOUT_CUBIC, OUT_QUAD, INOUT_CUBIC, OUT_QUAD, OUT_CUBIC, OUT_CUBIC, LINEAR, OUT_CUBIC, LINEAR};
+    private static final int[]   AX_E = {LINEAR, LINEAR, OUT_QUAD, INOUT_CUBIC, OUT_QUAD, INOUT_CUBIC, OUT_QUAD, OUT_CUBIC, OUT_CUBIC, LINEAR, OUT_CUBIC, LINEAR};
 
     // Vertical centre: small living bob during the tussle, lift up on launch.
     private static final float[] AY_T = {0.00f, 1.15f, 1.85f, 2.55f, 3.25f, 3.80f, 4.30f, 4.58f, T_GONE, T_END};
@@ -105,7 +110,8 @@ public class LoaderView extends View {
 
     // ── Runtime ────────────────────────────────────────────────────────────────
     private boolean running = false;
-    private boolean loop = true;
+    /** One-shot by default, matching every current caller; setLooping(true) restores the seamless loop. */
+    private boolean loop = false;
     private long startNanos = 0L;
     private OnEndListener onEndListener;
     private boolean endNotified = false;
@@ -115,6 +121,8 @@ public class LoaderView extends View {
     private final Paint capPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Typeface heavy;
     private final Typeface captionFace;
+    /** Centred baseline for the hero "a", precomputed so onDraw never allocates FontMetrics. */
+    private final float glyphBaseline;
 
     private String captionLoading = "LOADING…";
     private String captionReady = "READY";
@@ -135,6 +143,14 @@ public class LoaderView extends View {
         heavy = (t != null) ? t : Typeface.DEFAULT_BOLD;
         Typeface m = Typeface.create("sans-serif-medium", Typeface.NORMAL);
         captionFace = (m != null) ? m : Typeface.DEFAULT;
+        // glyphPaint draws only the hero "a": configure it once here and cache the
+        // centred baseline instead of allocating FontMetrics on every frame (the
+        // overlay runs ~5s at 60 fps on the low-RAM Fire OS 7 devices).
+        glyphPaint.setTypeface(heavy);
+        glyphPaint.setTextSize(460f);
+        glyphPaint.setTextAlign(Paint.Align.CENTER);
+        Paint.FontMetrics fm = glyphPaint.getFontMetrics();
+        glyphBaseline = -(fm.ascent + fm.descent) / 2f;
         // Precompute the cursor contact points (where ripples originate).
         for (int i = 0; i < IMPACTS.length; i++) {
             contactX[i] = interp(IMPACTS[i], AX_T, AX_V, AX_E) - 142f;
@@ -398,14 +414,9 @@ public class LoaderView extends View {
         paint.setAlpha((int) (op * 255f));
         c.drawCircle(0f, 0f, 330f, paint);
         paint.setShader(null);
-        // the glyph itself
-        glyphPaint.setTypeface(heavy);
-        glyphPaint.setTextSize(460f);
-        glyphPaint.setTextAlign(Paint.Align.CENTER);
+        // the glyph itself (paint preconfigured in the constructor)
         glyphPaint.setColor(withAlpha(ORANGE, op));
-        Paint.FontMetrics fm = glyphPaint.getFontMetrics();
-        float yb = -(fm.ascent + fm.descent) / 2f;
-        c.drawText("a", 0f, yb, glyphPaint);
+        c.drawText("a", 0f, glyphBaseline, glyphPaint);
         c.restore();
     }
 
@@ -455,7 +466,7 @@ public class LoaderView extends View {
         c.restore();
     }
 
-    // Loop seam — soft dip to black at the very end / start.
+    // Loop seam: soft dip to black at the very end / start.
     private void drawLoopFade(Canvas c, float t) {
         float op = 0f;
         if (t > T_END - 0.3f) op = (t - (T_END - 0.3f)) / 0.3f;

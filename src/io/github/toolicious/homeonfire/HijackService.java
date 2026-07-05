@@ -1128,8 +1128,9 @@ public class HijackService extends AccessibilityService {
     // 5s), so the target launcher only appears ~5s after Amazon's home flashes.
     // That delay cannot be removed without root, so we MASK it: a full-screen
     // TYPE_ACCESSIBILITY_OVERLAY (a window add, which is NOT subject to the
-    // app-switch lock) covers the gap, then fades out the instant the target
-    // window actually appears.
+    // app-switch lock) covers the gap; once the target window actually appears
+    // it stays opaque for a short hold (so the launcher can finish painting)
+    // and then cross-fades out.
     //
     // It is self-calibrating, not an assumption: the overlay is only shown if
     // the target has not become foreground within a short grace window (so
@@ -1149,10 +1150,11 @@ public class HijackService extends AccessibilityService {
      */
     private static final boolean MASK_SUPPORTED = Build.VERSION.SDK_INT <= 28;
     // Start-cover grace, end-hold and cross-fade duration are tunable at runtime via
-    // Prefs (the beta overlay-timing rows): prefs.getMaskGraceMs() / getMaskHoldMs() /
-    // getMaskFadeMs(), defaulting to 50 / 500 / 200 ms. The grace is read live so the
-    // tester can probe the start flash; the hold gives the launcher time to paint before
-    // the fade, closing the end flash.
+    // Prefs (the hidden overlay-timing rows): prefs.getMaskGraceMs() / getMaskHoldMs() /
+    // getMaskFadeMs(); the defaults live in Prefs.DEFAULT_MASK_GRACE / HOLD / FADE (kept
+    // there only, so this comment cannot drift). The grace is read live so a tester can
+    // probe the start flash; the hold gives the launcher time to paint before the fade,
+    // closing the end flash.
     /** Safety net: force-remove the overlay if the target window never announces itself. */
     private static final long MASK_HARD_TIMEOUT_MS = 6_500L;
     /** Delay after the service connects before prewarming the overlay path. */
@@ -1400,31 +1402,33 @@ public class HijackService extends AccessibilityService {
             return;
         }
         long hold = prefs.getMaskHoldMs();
-        long fade = prefs.getMaskFadeMs();
+        final long fade = prefs.getMaskFadeMs();
         // Backstop: guarantee the overlay is gone within the hold + fade span even if a
-        // dropped animation callback would otherwise leave it up.
-        rescheduleMaskTimeout(hold + fade + 400L);
+        // dropped animation callback would otherwise leave it up. The fade duration is
+        // read once here and passed through so backstop and animation always agree.
+        rescheduleMaskTimeout(hold + fade + 400L,
+                "Mask teardown backstop reached, removing");
         if (hold <= 0L || mainHandler == null) {
-            fadeMask();
+            fadeMask(fade);
             return;
         }
         maskHoldRunnable = new Runnable() {
             @Override
             public void run() {
                 maskHoldRunnable = null;
-                fadeMask();
+                fadeMask(fade);
             }
         };
         mainHandler.postDelayed(maskHoldRunnable, hold);
     }
 
     /** Cross-fades the overlay out uniformly (revealing the launcher underneath), then detaches it. */
-    private void fadeMask() {
+    private void fadeMask(long fadeMs) {
         if (!maskAttached || maskView == null) {
             removeMask();
             return;
         }
-        maskView.animate().alpha(0f).setDuration(prefs.getMaskFadeMs())
+        maskView.animate().alpha(0f).setDuration(fadeMs)
                 .withEndAction(new Runnable() {
                     @Override
                     public void run() {
@@ -1477,20 +1481,10 @@ public class HijackService extends AccessibilityService {
         removeMask();
     }
 
+    /** Arms the initial hard timeout for a freshly shown mask (target never appears). */
     private void scheduleMaskTimeout() {
-        cancelMaskTimeout();
-        if (mainHandler == null) return;
-        maskTimeoutRunnable = new Runnable() {
-            @Override
-            public void run() {
-                maskTimeoutRunnable = null;
-                if (maskAttached) {
-                    Log.i(TAG, "Mask hard-timeout: target window never appeared, removing");
-                    removeMask();
-                }
-            }
-        };
-        mainHandler.postDelayed(maskTimeoutRunnable, MASK_HARD_TIMEOUT_MS);
+        rescheduleMaskTimeout(MASK_HARD_TIMEOUT_MS,
+                "Mask hard-timeout: target window never appeared, removing");
     }
 
     private void cancelMaskTimeout() {
@@ -1500,8 +1494,12 @@ public class HijackService extends AccessibilityService {
         }
     }
 
-    /** Re-arms the mask removal backstop with a specific delay (used once teardown begins). */
-    private void rescheduleMaskTimeout(long delayMs) {
+    /**
+     * (Re-)arms the mask removal backstop. Single builder for both the initial
+     * hard timeout and the teardown backstop, so a future fix to the runnable
+     * cannot be applied to one copy and missed in the other.
+     */
+    private void rescheduleMaskTimeout(long delayMs, final String logMsg) {
         cancelMaskTimeout();
         if (mainHandler == null) return;
         maskTimeoutRunnable = new Runnable() {
@@ -1509,7 +1507,7 @@ public class HijackService extends AccessibilityService {
             public void run() {
                 maskTimeoutRunnable = null;
                 if (maskAttached) {
-                    Log.i(TAG, "Mask teardown backstop reached, removing");
+                    Log.i(TAG, logMsg);
                     removeMask();
                 }
             }
