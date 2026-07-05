@@ -399,8 +399,7 @@ The source is open, so you can verify.
 ## License
 
 [GPLv3-or-later](./LICENSE) (GNU General Public License,
-version 3 or later). The same copyleft license used by FLauncher
-and LtvLauncher. Fork freely; any modified version you
+version 3 or later). Fork freely; any modified version you
 distribute must stay under GPL and ship its source. Each source
 file carries an `SPDX-License-Identifier: GPL-3.0-or-later`
 marker.
