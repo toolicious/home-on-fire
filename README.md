@@ -400,9 +400,7 @@ The source is open, so you can verify.
 
 [GPLv3-or-later](./LICENSE) (GNU General Public License,
 version 3 or later). Fork freely; any modified version you
-distribute must stay under GPL and ship its source. Each source
-file carries an `SPDX-License-Identifier: GPL-3.0-or-later`
-marker.
+distribute must stay under GPL and ship its source.
 
 ---
 
