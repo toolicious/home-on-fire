@@ -69,7 +69,7 @@ $Jar   = "$JavaHome\bin\jar.exe"
 # --- Project layout ------------------------------------------------------
 $ProjectRoot  = $PSScriptRoot
 $BuildDir     = Join-Path $ProjectRoot 'build'
-$KeystoreDir  = Join-Path $ProjectRoot 'keystore'
+$KeystoreDir  = Join-Path $ProjectRoot '..\..\_signing'
 $Keystore     = Join-Path $KeystoreDir 'home-on-fire.keystore'
 $Manifest     = Join-Path $ProjectRoot 'AndroidManifest.xml'
 $OutApk       = Join-Path $ProjectRoot 'home-on-fire.apk'
@@ -80,10 +80,10 @@ if (-not (Test-Path $Keystore)) {
 }
 
 # --- Signing credentials --------------------------------------------------
-# The store password lives in a gitignored properties file next to the
-# keystore, never in this (public) script. PKCS12 keystores use a single
-# password protecting both the store and the key inside it.
-$PropsFile = Join-Path $KeystoreDir 'keystore.properties'
+# The store password lives in a properties file next to the keystore in the
+# shared _signing folder (outside the repo), never in this (public) script.
+# PKCS12 keystores use a single password protecting both store and key.
+$PropsFile = Join-Path $KeystoreDir 'home-on-fire.properties'
 if (-not (Test-Path $PropsFile)) {
     throw "Missing $PropsFile. Create it with a single line:  storePass=<keystore password>"
 }
