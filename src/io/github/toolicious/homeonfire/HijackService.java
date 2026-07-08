@@ -496,7 +496,9 @@ public class HijackService extends AccessibilityService {
     /**
      * Auto-hijack when Amazon home appears as a fresh foreground.
      * Skips:
-     *  - in-Amazon-area arrivals (closing a sub-page, leaving settings)
+     *  - arrivals from within Amazon's own home shell (launcher, settings,
+     *    quicksettings, none of which expose a Leanback launcher entry);
+     *    returning from a full Amazon app such as Prime Video still redirects
      *  - active long-press bypass window
      *  - detected double-presses (within debounce, no Back between
      *    last hijack and this WSE: Fire OS firmware-intercepts the
@@ -511,7 +513,11 @@ public class HijackService extends AccessibilityService {
         if (target == null || target.isEmpty() || target.equals(getPackageName())) return;
 
         String prev = previousForegroundPkg;
-        if (prev != null && prev.startsWith("com.amazon.")) return;
+        // Skip only while the user moves within Amazon's own home shell (launcher /
+        // settings / quicksettings, none of which expose a Leanback launcher entry).
+        // Returning from a full Amazon app such as Prime Video (com.amazon.firebat, which
+        // does have one) should redirect to the target like any other app.
+        if (prev != null && prev.startsWith("com.amazon.") && !isLeanbackLaunchable(prev)) return;
 
         long now = System.currentTimeMillis();
         if (now < bypassUntil) return;
@@ -529,6 +535,20 @@ public class HijackService extends AccessibilityService {
         }
         // lastHijackAt is armed inside launchTarget on success.
         launchTarget(target, "Redirected Home (from " + prev + ")");
+    }
+
+    /**
+     * True if {@code pkg} exposes a Leanback launcher entry, i.e. it is a user-facing
+     * Fire TV app (Prime Video, Netflix, ...). Amazon's home-shell components (the
+     * launcher, Settings, Quick Settings) have no Leanback entry, so this tells a content
+     * app apart from the home shell without hardcoding package names.
+     */
+    private boolean isLeanbackLaunchable(String pkg) {
+        try {
+            return getPackageManager().getLeanbackLaunchIntentForPackage(pkg) != null;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
