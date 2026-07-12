@@ -29,11 +29,43 @@
     <string name="switch_accessibility">Accessibility service (required)</string>
     <string name="switch_accessibility_tip">Required for everything else in this app to work. This permission has to be granted only once via adb:\nadb shell pm grant io.github.toolicious.homeonfire android.permission.WRITE_SECURE_SETTINGS</string>
     <string name="switch_hijack">Replace ⌂ Home button</string>
-    <string name="switch_hijack_tip">Pressing ⌂ Home from any third-party app opens the target app instead of the default home screen.\nDouble-press or long-press ⌂ Home in the target app to escape to the default home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon is focused to open the target app.</string>
+    <string name="switch_hijack_tip">Pressing ⌂ Home from any third-party app opens the target app instead of the Amazon home screen.\nDouble-press ⌂ Home about a second apart, or long-press it, in the target app to escape to the Amazon home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon on the Amazon home screen is focused to open the target app.</string>
+    <string name="switch_hijack_tip_fos7">Pressing ⌂ Home from any third-party app opens the target app instead of the Amazon home screen.\nOn Fire OS 7 the system holds a Home press for up to 5 seconds; a loading animation covers the wait. The mapped launcher button or ⊞ Apps button below open instantly instead.\nDouble-press ⌂ Home about a second apart, or long-press it, in the target app to escape to the Amazon home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon on the Amazon home screen is focused to open the target app.</string>
     <string name="switch_boot">Launch on boot</string>
     <string name="switch_boot_tip">Open the target app automatically when the device boots or wakes from standby.</string>
     <string name="switch_menu_lp">☰ Menu long-press opens this config screen</string>
-    <string name="switch_menu_lp_tip">Hold the ☰ Menu button for half a second inside the target app or Fire TV home to open this config screen.</string>
+    <string name="switch_menu_lp_tip">Hold the ☰ Menu button for half a second to open this config screen.</string>
+    <!-- Instant launcher shortcuts: reach the target without going through the
+         Home button, so on Fire OS 7 they skip the app-switch delay. -->
+    <string name="launch_key_label">Map custom buttons</string>
+    <string name="launch_key_launcher_label">Launcher:</string>
+    <string name="launch_key_amazon_label">Amazon Home:</string>
+    <string name="launch_key_tip">Map spare remote buttons: one opens your target launcher, one jumps to the Amazon home screen. Turn on, then select a box and press ◉ OK to bind a button; hold ◉ OK to reset it. Usable buttons: ● ● ● ●, the number keys, channel up/down, subtitles, teletext, and the media keys (⏪ ⏵ ⏩). App buttons like ⊞ Apps, Prime or Netflix cannot be used.</string>
+    <string name="launch_key_tip_fos7">Map spare remote buttons: one opens your target launcher instantly (no delay, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds), one jumps to the Amazon home screen. Turn on, then select a box and press ◉ OK to bind a button; hold ◉ OK to reset it. Usable buttons: ● ● ● ●, the number keys, channel up/down, subtitles, teletext, and the media keys (⏪ ⏵ ⏩). App buttons like ⊞ Apps, Prime or Netflix cannot be used.</string>
+    <string name="launch_key_launcher_box_tip">Press ◉ OK to bind a remote button that opens your target launcher directly (↩ Back cancels); hold ◉ OK to reset.</string>
+    <string name="launch_key_amazon_box_tip">Press ◉ OK to bind a remote button that jumps to the Amazon home screen (↩ Back cancels); hold ◉ OK to reset.</string>
+    <string name="launch_key_none">None</string>
+    <string name="launch_key_learning">Press a button…</string>
+    <string name="launch_key_cleared">Custom launch key reset</string>
+
+    <string name="switch_apps_redirect">Replace ⊞ Apps button</string>
+    <string name="switch_apps_redirect_tip">Turn the ⊞ Apps button into a launcher shortcut. The Amazon app grid still flashes up first for a moment, then your target launcher takes over. Handy if you have no spare button to give up, though the custom launch key below opens without that flash.</string>
+    <string name="switch_apps_redirect_tip_fos7">Turn the ⊞ Apps button into a launcher shortcut with no delay, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds. The Amazon app grid still flashes up first for a moment, then your target launcher takes over. Handy if you have no spare button to give up, though the custom launch key below opens without that flash.</string>
+
+    <!-- Friendly names for bound launch keys, shown on the custom-launch-key row. -->
+    <string name="key_red">Red</string>
+    <string name="key_green">Green</string>
+    <string name="key_yellow">Yellow</string>
+    <string name="key_blue">Blue</string>
+    <string name="key_channel_up">Channel +</string>
+    <string name="key_channel_down">Channel -</string>
+    <string name="key_subtitles">Subtitles</string>
+    <string name="key_teletext">Teletext</string>
+    <string name="key_play">Play</string>
+    <string name="key_rewind">Rewind</string>
+    <string name="key_forward">Fast-forward</string>
+    <string name="key_number">Number %1$d</string>
+
     <string name="switch_verbose">Verbose logging (for debugging)</string>
     <string name="switch_verbose_tip">Logs every key and window event the accessibility service receives, tagged HomeOnFire. View on-device with the button on the right, or with:\nadb logcat -s HomeOnFire</string>
 

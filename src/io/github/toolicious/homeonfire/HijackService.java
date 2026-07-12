@@ -90,6 +90,26 @@ public class HijackService extends AccessibilityService {
      */
     private static final String QUICKSETTINGS_PKG = "com.amazon.tv.quicksettings.ui";
 
+    /**
+     * Amazon's Appstore, whose {@code AppsGridLauncherActivity} is what the
+     * remote's Apps button opens. We cannot see the Apps key itself (it is
+     * system-handled), so redirecting that button to the target is driven off
+     * this window appearing (see {@link #handleAppsGridArrival}).
+     */
+    private static final String AMAZON_APPS_GRID = "com.amazon.venezia";
+
+    /** Callback the config screen registers to learn an assignable remote key. */
+    public interface KeyLearnListener {
+        void onKeyLearned(int keyCode);
+    }
+
+    /**
+     * Non-null while the config screen is waiting for the user to press a
+     * button to bind as the launch key. Set/cleared via {@link #startLearning}
+     * / {@link #stopLearning}; the service and the Activity share one process.
+     */
+    private static volatile KeyLearnListener sLearnListener;
+
     /** How long we suppress our own hijack after a long-press redirect. */
     private static final long LONGPRESS_REDIRECT_BYPASS_MS = 5_000L;
 
@@ -372,6 +392,8 @@ public class HijackService extends AccessibilityService {
                 && AMAZON_LAUNCHER_HOME_ACTIVITY.equals(cls.toString());
         onAmazonHomeActivity = isAmazonHome;
         boolean inAmazonLauncher = AMAZON_LAUNCHER.equals(pkgStr);
+        boolean isAppsGrid = AMAZON_APPS_GRID.equals(pkgStr) && cls != null
+                && cls.toString().endsWith("AppsGridLauncherActivity");
 
         if (prefs.isVerboseLogging()) {
             Log.i(TAG, "verbose win pkg=" + pkg + " cls=" + cls
@@ -389,6 +411,10 @@ public class HijackService extends AccessibilityService {
 
         if (QUICKSETTINGS_PKG.equals(pkgStr)) {
             handleQuickSettingsLongPress();
+            return;
+        }
+        if (isAppsGrid) {
+            handleAppsGridArrival();
             return;
         }
         if (isAmazonHome) {
@@ -483,7 +509,7 @@ public class HijackService extends AccessibilityService {
         }
 
         if (target.equals(prev)) {
-            redirectToAmazonHome();
+            redirectToAmazonHome("Long-press Home in target");
             return;
         }
         if (prev != null && prev.startsWith("com.amazon.")) {
@@ -538,6 +564,26 @@ public class HijackService extends AccessibilityService {
     }
 
     /**
+     * The remote's Apps button opens Amazon's Apps grid; we cannot see that key,
+     * so we react to the grid window instead and, if enabled, redirect to the
+     * target. Always redirects, even when the launcher was already in front,
+     * because the grid always appears first and skipping the already-home case
+     * would strand the user on the grid with no way back via Apps. No mask: this
+     * never arms the app-switch lock, so it is instant apart from the brief grid
+     * flash (which is unavoidable, since the system opens the grid before we can
+     * react).
+     */
+    private void handleAppsGridArrival() {
+        if (!prefs.isAppsButtonRedirect()) return;
+        String target = prefs.getTargetPackage();
+        if (target == null || target.isEmpty() || target.equals(getPackageName())) return;
+        long now = System.currentTimeMillis();
+        if (now < bypassUntil) return;
+        if (now - lastHijackAt < HIJACK_DEBOUNCE_MS) return;
+        launchTarget(target, "Redirect from Apps grid", false);
+    }
+
+    /**
      * True if {@code pkg} exposes a Leanback launcher entry, i.e. it is a user-facing
      * Fire TV app (Prime Video, Netflix, ...). Amazon's home-shell components (the
      * launcher, Settings, Quick Settings) have no Leanback entry, so this tells a content
@@ -565,11 +611,11 @@ public class HijackService extends AccessibilityService {
      * tab the previous Amazon-home visit ended on, which breaks our
      * Back/OK-on-Home-tab return-to-target gesture.
      */
-    private void redirectToAmazonHome() {
+    private void redirectToAmazonHome(String reason) {
         bypassUntil = System.currentTimeMillis() + LONGPRESS_REDIRECT_BYPASS_MS;
         pendingHomeTabCapture = true;
         boolean ok = performGlobalAction(GLOBAL_ACTION_HOME);
-        Log.i(TAG, "Long-press Home in target. Dispatched GLOBAL_ACTION_HOME ok=" + ok);
+        Log.i(TAG, reason + ". Dispatched GLOBAL_ACTION_HOME ok=" + ok);
     }
 
     /**
@@ -597,6 +643,28 @@ public class HijackService extends AccessibilityService {
 
         if (isDown) {
             trackKeyState(keyCode);
+        }
+
+        // Learn mode: the config screen asked us to capture the next assignable
+        // key so the user can bind it as the launch key (same-process handoff).
+        // While waiting we also swallow the navigation keys (d-pad, OK, Menu,
+        // Home) so the config UI can't move focus or activate anything mid-learn.
+        // Back is deliberately left alone so the row's own handler can cancel.
+        if (sLearnListener != null && isDown) {
+            if (event.getRepeatCount() == 0 && isAssignableKey(keyCode)) {
+                final KeyLearnListener learn = sLearnListener;
+                sLearnListener = null;
+                final int captured = keyCode;
+                mainHandler.post(new Runnable() {
+                    @Override public void run() { learn.onKeyLearned(captured); }
+                });
+                consumedDownKey = keyCode;
+                return true;
+            }
+            if (keyCode != KeyEvent.KEYCODE_BACK) {
+                consumedDownKey = keyCode; // swallow the paired UP as well
+                return true;
+            }
         }
 
         // Capture the swallow decision BEFORE handleMenuKey, whose UP
@@ -634,6 +702,35 @@ public class HijackService extends AccessibilityService {
                 return true;
             }
             return false;
+        }
+
+        // Custom launch key: a user-assigned button opens the target directly.
+        // It never routes through Home, so no app-switch lock and no FOS7 mask.
+        // Re-assignment uses OK on the config box (handled by the learn hook
+        // above, which swallows keys), so the bound key does not need to be
+        // suppressed on our own screen; it just launches everywhere.
+        int launchKey = prefs.getLaunchKeycode();
+        if (prefs.isLaunchKeyEnabled()
+                && launchKey != Prefs.DEFAULT_LAUNCH_KEYCODE && keyCode == launchKey
+                && event.getRepeatCount() == 0) {
+            String launchKeyTarget = prefs.getTargetPackage();
+            if (launchKeyTarget != null && !launchKeyTarget.isEmpty()
+                    && !launchKeyTarget.equals(getPackageName())) {
+                launchTarget(launchKeyTarget, "Launch key " + keyCode, false);
+                consumedDownKey = keyCode;
+                return true;
+            }
+        }
+
+        // Amazon-home key: reaches the stock Amazon launcher, arming the bypass
+        // so our own Home redirect doesn't send it straight back to the target.
+        int amazonKey = prefs.getAmazonKeycode();
+        if (prefs.isLaunchKeyEnabled()
+                && amazonKey != Prefs.DEFAULT_LAUNCH_KEYCODE && keyCode == amazonKey
+                && event.getRepeatCount() == 0) {
+            redirectToAmazonHome("Amazon key " + keyCode);
+            consumedDownKey = keyCode;
+            return true;
         }
 
         boolean consumed = tryBackOrCenterHijack(keyCode);
@@ -715,6 +812,16 @@ public class HijackService extends AccessibilityService {
      *    again, which would otherwise create a back-and-forth loop.
      */
     private boolean launchTarget(String target, String reasonForLog) {
+        return launchTarget(target, reasonForLog, true);
+    }
+
+    /**
+     * @param withMask whether to arm the Fire OS 7 masking overlay. The instant
+     *   shortcuts (custom launch key, Apps-button redirect) pass {@code false}:
+     *   they never route through Home, so no app-switch lock is armed and there
+     *   is no delay to cover.
+     */
+    private boolean launchTarget(String target, String reasonForLog, boolean withMask) {
         PackageManager pm = getPackageManager();
         Intent intent = pm.getLeanbackLaunchIntentForPackage(target);
         if (intent == null) intent = pm.getLaunchIntentForPackage(target);
@@ -754,7 +861,7 @@ public class HijackService extends AccessibilityService {
             // hit the still-active bypass and strand the user there.
             bypassUntil = 0L;
             Log.i(TAG, reasonForLog + ". Launched " + target);
-            armMask(target);
+            if (withMask) armMask(target);
             return true;
         } catch (Exception e) {
             Log.e(TAG, "Failed to launch " + target, e);
@@ -1035,6 +1142,32 @@ public class HijackService extends AccessibilityService {
                 || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
                 || keyCode == KeyEvent.KEYCODE_DPAD_UP
                 || keyCode == KeyEvent.KEYCODE_DPAD_DOWN;
+    }
+
+    /**
+     * True for keys the user may bind as a launch key. Excludes the navigation
+     * and system keys the config screen needs (d-pad, OK/Enter, Back, Menu,
+     * Home) so it stays operable while learning; everything else (colour,
+     * number, media, captions, teletext, ...) is fair game.
+     */
+    private static boolean isAssignableKey(int keyCode) {
+        return !isDpadNavKey(keyCode)
+                && keyCode != KeyEvent.KEYCODE_DPAD_CENTER
+                && keyCode != KeyEvent.KEYCODE_ENTER
+                && keyCode != KeyEvent.KEYCODE_BACK
+                && keyCode != KeyEvent.KEYCODE_MENU
+                && keyCode != KeyEvent.KEYCODE_HOME
+                && keyCode != KeyEvent.KEYCODE_UNKNOWN;
+    }
+
+    /** Config screen: capture the next assignable key press, then report it. */
+    public static void startLearning(KeyLearnListener listener) {
+        sLearnListener = listener;
+    }
+
+    /** Config screen: stop waiting for a key (on pause or cancel). */
+    public static void stopLearning() {
+        sLearnListener = null;
     }
 
     /**

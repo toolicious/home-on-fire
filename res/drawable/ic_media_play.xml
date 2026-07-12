@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Play glyph (filled right triangle). Its apex reaches x=20.5 so the gap to the
+     following label matches the rewind/fast-forward glyphs. Tinted at runtime. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M6,5 L6,19 L20.5,12 Z" />
+</vector>

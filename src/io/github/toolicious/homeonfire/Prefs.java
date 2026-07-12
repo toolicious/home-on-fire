@@ -23,6 +23,17 @@ public class Prefs {
     private static final String KEY_VERBOSE = "verbose_logging";
     private static final String KEY_MENU_LP = "menu_longpress_launch";
 
+    // Instant, delay-free launcher shortcuts that do NOT go through the Home
+    // button (so the Fire OS 7 app-switch lock is never armed): a redirect off
+    // the Amazon Apps-grid window, and a user-assigned remote keycode.
+    private static final String KEY_APPS_REDIRECT = "redirect_apps_button";
+    private static final String KEY_LAUNCH_KEY_ENABLED = "launch_key_enabled";
+    private static final String KEY_LAUNCH_KEYCODE = "launch_keycode";
+    private static final String KEY_AMAZON_KEYCODE = "amazon_keycode";
+
+    /** No custom launch key assigned. */
+    public static final int DEFAULT_LAUNCH_KEYCODE = -1;
+
     // Beta overlay-timing tuning (milliseconds). Read live by HijackService on
     // each redirect, written by the tuning rows in MainActivity. Only effective
     // on Fire OS 6/7, where the masking overlay actually runs.
@@ -99,6 +110,61 @@ public class Prefs {
 
     public void setMenuLongPressLaunch(boolean enabled) {
         sp.edit().putBoolean(KEY_MENU_LP, enabled).apply();
+    }
+
+    /**
+     * When true, pressing the remote's Apps button opens the target
+     * launcher instead of Amazon's Apps grid. The button press itself is
+     * invisible to us, so this is driven off the Apps-grid window
+     * appearing (see HijackService.handleAppsGridArrival). Off by default.
+     */
+    public boolean isAppsButtonRedirect() {
+        return sp.getBoolean(KEY_APPS_REDIRECT, false);
+    }
+
+    public void setAppsButtonRedirect(boolean enabled) {
+        sp.edit().putBoolean(KEY_APPS_REDIRECT, enabled).apply();
+    }
+
+    /**
+     * Master toggle for the custom launch key. Kept separate from the
+     * assigned keycode so the user can switch the feature off without
+     * losing which button they picked. The key only fires when this is
+     * true AND a keycode is assigned. Off by default.
+     */
+    public boolean isLaunchKeyEnabled() {
+        return sp.getBoolean(KEY_LAUNCH_KEY_ENABLED, false);
+    }
+
+    public void setLaunchKeyEnabled(boolean enabled) {
+        sp.edit().putBoolean(KEY_LAUNCH_KEY_ENABLED, enabled).apply();
+    }
+
+    /**
+     * Keycode of a remote button the user assigned to open the target
+     * launcher directly (no Home-button detour, so no Fire OS 7 delay).
+     * {@link #DEFAULT_LAUNCH_KEYCODE} (-1) means none assigned. Gated by
+     * {@link #isLaunchKeyEnabled()}.
+     */
+    public int getLaunchKeycode() {
+        return sp.getInt(KEY_LAUNCH_KEYCODE, DEFAULT_LAUNCH_KEYCODE);
+    }
+
+    public void setLaunchKeycode(int keyCode) {
+        sp.edit().putInt(KEY_LAUNCH_KEYCODE, keyCode).apply();
+    }
+
+    /**
+     * Keycode of a remote button the user assigned to open the Amazon home
+     * screen (an escape from the redirect back to the stock launcher). -1 means
+     * none. Also gated by {@link #isLaunchKeyEnabled()}.
+     */
+    public int getAmazonKeycode() {
+        return sp.getInt(KEY_AMAZON_KEYCODE, DEFAULT_LAUNCH_KEYCODE);
+    }
+
+    public void setAmazonKeycode(int keyCode) {
+        sp.edit().putInt(KEY_AMAZON_KEYCODE, keyCode).apply();
     }
 
     /** Start-cover grace before the masking overlay is shown (ms). */

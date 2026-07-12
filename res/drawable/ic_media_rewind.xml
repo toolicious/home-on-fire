@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rewind glyph (two left triangles), right edge near x=20.5 to match the other
+     media glyphs' gap to the label. Tinted at runtime. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M11.75,6 L11.75,18 L3.25,12 Z M20.5,6 L20.5,18 L12,12 Z" />
+</vector>

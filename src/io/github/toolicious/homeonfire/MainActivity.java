@@ -51,7 +51,19 @@ public class MainActivity extends Activity {
     private TextView targetEmojiView;
     /** Round launch button on the right of the target row. */
     private TextView launchBtn;
-    private Switch accessSwitch, hijackSwitch, bootSwitch, verboseSwitch, menuLpSwitch;
+    private Switch accessSwitch, hijackSwitch, bootSwitch, verboseSwitch, menuLpSwitch,
+            appsRedirectSwitch, launchKeyEnabledSwitch;
+
+    /** The map-custom-buttons switch-row (left half); pinned into the vertical focus chain. */
+    private LinearLayout launchKeyRow;
+    /** The two "map custom button" value boxes: one for the target launcher, one for Amazon home. */
+    private TextView launcherBox, amazonBox;
+    /** The box currently in learn mode (waiting for a key press), or null, plus its target pref. */
+    private TextView learningBox;
+    private IntPref learningPref;
+
+    /** Vertical padding inside every settings row; kept small so more rows fit one screen. */
+    private static final int ROW_PAD_V = 8;
 
     /** Tip box at the bottom that shows the description of the focused option. */
     private TextView tipView;
@@ -97,6 +109,7 @@ public class MainActivity extends Activity {
         content.addView(buildTargetRow(), targetRowLp());
         addSwitches(content);
         addTuningRows(content);
+        wireVerticalNav();
 
         scroll.addView(content);
         // ScrollView takes remaining vertical space (weight = 1) so
@@ -161,7 +174,7 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(MainActivity.this, TargetPickerActivity.class));
             }
         });
-        pickerArea.setOnKeyListener(new PickerLongPressListener());
+        pickerArea.setOnKeyListener(new RightNavGuard(new PickerLongPressListener()));
         attachTip(pickerArea, getString(R.string.target_picker_tip));
         initialFocus = pickerArea;
 
@@ -313,6 +326,7 @@ public class MainActivity extends Activity {
                 launchTarget();
             }
         });
+        btn.setOnKeyListener(new RightNavGuard(null)); // rightmost in its row
         attachTip(btn, getString(R.string.launch_button_tip));
         return btn;
     }
@@ -343,11 +357,26 @@ public class MainActivity extends Activity {
                 });
         hijackSwitch = makeSwitchRow(content,
                 badgeKeys(getString(R.string.switch_hijack)),
-                getString(R.string.switch_hijack_tip),
+                getString(isFos7OrOlder()
+                        ? R.string.switch_hijack_tip_fos7
+                        : R.string.switch_hijack_tip),
                 prefs.isHijackEnabled(),
                 prefToggle(new PrefSetter() {
                     @Override public void set(boolean v) { prefs.setHijackEnabled(v); }
                 }));
+        // The other two "replace a button" shortcuts sit right under Replace Home.
+        // Apps first, then the custom key (whose tooltip is referenced from the
+        // Apps tooltip as "the custom launch key below").
+        appsRedirectSwitch = makeSwitchRow(content,
+                badgeKeys(getString(R.string.switch_apps_redirect)),
+                getString(isFos7OrOlder()
+                        ? R.string.switch_apps_redirect_tip_fos7
+                        : R.string.switch_apps_redirect_tip),
+                prefs.isAppsButtonRedirect(),
+                prefToggle(new PrefSetter() {
+                    @Override public void set(boolean v) { prefs.setAppsButtonRedirect(v); }
+                }));
+        addLaunchKeyRow(content);
         bootSwitch = makeSwitchRow(content,
                 getString(R.string.switch_boot),
                 getString(R.string.switch_boot_tip),
@@ -366,6 +395,294 @@ public class MainActivity extends Activity {
     }
 
     /**
+     * Custom-launch-key row. Two focusable parts, like the verbose row:
+     *  - a switch on the left that enables/disables the shortcut WITHOUT losing
+     *    the assigned button, and
+     *  - a "data field" box on the right showing the bound button (or "None").
+     * Turning the switch on while nothing is bound jumps straight into learn
+     * mode; if a button is already bound it just re-enables. To change the
+     * button, move right onto the box and press OK. During learn mode the
+     * accessibility service swallows the d-pad so focus can't drift; press the
+     * remote button to bind it, or Back to cancel. Unlike the Home redirect this
+     * launches with no app-switch lock, so on Fire OS 7 there is no delay.
+     */
+    private void addLaunchKeyRow(LinearLayout content) {
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.HORIZONTAL);
+        outer.setGravity(Gravity.CENTER_VERTICAL);
+
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(16), dp(ROW_PAD_V), dp(16), dp(ROW_PAD_V));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setFocusable(true);
+        row.setClickable(true);
+        row.setBackground(getDrawable(R.drawable.row_focus_bg));
+
+        final Switch sw = new Switch(this);
+        sw.setChecked(prefs.isLaunchKeyEnabled());
+        sw.setFocusable(false);
+        sw.setClickable(false);
+        sw.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean isChecked) {
+                if (suppressSwitchEvents) return;
+                prefs.setLaunchKeyEnabled(isChecked); // one toggle gates both mappings
+                updateLaunchKeyBoxState();
+            }
+        });
+        LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        swLp.rightMargin = dp(16);
+        row.addView(sw, swLp);
+
+        TextView tv = new TextView(this);
+        tv.setText(getString(R.string.launch_key_label));
+        tv.setTextSize(18);
+        tv.setTextColor(Colors.NEUTRAL);
+        LinearLayout.LayoutParams tvLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        row.addView(tv, tvLp);
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (row.isEnabled()) sw.toggle();
+            }
+        });
+        // RIGHT reaches the value boxes only while enabled; otherwise stay put.
+        row.setOnKeyListener(new RightNavGuard(null));
+        attachTip(row, getString(isFos7OrOlder()
+                ? R.string.launch_key_tip_fos7 : R.string.launch_key_tip));
+        outer.addView(row, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        // Two labelled value boxes on the right: target launcher, then Amazon home.
+        launchKeyEnabledSwitch = sw;
+        launchKeyRow = row;
+        launcherBox = addKeyBox(outer, getString(R.string.launch_key_launcher_label),
+                launcherPref(), dp(12), R.string.launch_key_launcher_box_tip);
+        amazonBox = addKeyBox(outer, getString(R.string.launch_key_amazon_label),
+                amazonPref(), dp(18), R.string.launch_key_amazon_box_tip);
+
+        updateLaunchKeyBoxState(); // start greyed/unfocusable if the shortcut is off
+        content.addView(outer);
+    }
+
+    /** IntPref bridge for the target-launcher keycode. */
+    private IntPref launcherPref() {
+        return new IntPref() {
+            @Override public int get() { return prefs.getLaunchKeycode(); }
+            @Override public void set(int v) { prefs.setLaunchKeycode(v); }
+        };
+    }
+
+    /** IntPref bridge for the Amazon-home keycode. */
+    private IntPref amazonPref() {
+        return new IntPref() {
+            @Override public int get() { return prefs.getAmazonKeycode(); }
+            @Override public void set(int v) { prefs.setAmazonKeycode(v); }
+        };
+    }
+
+    /**
+     * Builds one "SubLabel [box]" mapping control and appends it to {@code parent}.
+     * OK on the box learns a key (via the service); a long OK resets it to None.
+     */
+    private TextView addKeyBox(LinearLayout parent, String subLabel, final IntPref pref,
+                               int leftMargin, int tipRes) {
+        TextView label = new TextView(this);
+        label.setText(subLabel);
+        label.setTextSize(15);
+        label.setTextColor(Colors.NEUTRAL);
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelLp.leftMargin = leftMargin;
+        labelLp.rightMargin = dp(6);
+        parent.addView(label, labelLp);
+
+        final TextView box = new TextView(this);
+        box.setText(keyFieldText(pref));
+        box.setTextSize(16);
+        box.setTextColor(Colors.WHITE);
+        box.setGravity(Gravity.CENTER);
+        box.setMinWidth(dp(104));
+        box.setPadding(dp(12), dp(ROW_PAD_V), dp(12), dp(ROW_PAD_V));
+        box.setBackground(getDrawable(R.drawable.target_chip_bg));
+        box.setFocusable(true);
+        box.setClickable(true);
+        box.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (learningBox == null) startLearning(box, pref); // OK (re)assigns
+            }
+        });
+        box.setOnKeyListener(new RightNavGuard(new KeyBoxListener(box, pref)));
+        attachTip(box, getString(tipRes));
+        parent.addView(box);
+        return box;
+    }
+
+    /**
+     * The value box is usable only when the accessibility service is on AND the
+     * launch-key shortcut is enabled. When it isn't, grey it out and take it out
+     * of the focus order so it can't be selected; the binding itself is kept.
+     */
+    private void updateLaunchKeyBoxState() {
+        boolean usable = accessSwitch.isChecked() && prefs.isLaunchKeyEnabled();
+        if (!usable && learningBox != null) cancelLearning();
+        setBoxUsable(launcherBox, usable);
+        setBoxUsable(amazonBox, usable);
+    }
+
+    /** Enables/greys one value box; if it loses focusability while focused, moves focus off it. */
+    private void setBoxUsable(TextView box, boolean usable) {
+        if (box == null) return;
+        boolean wasFocused = box.isFocused();
+        box.setEnabled(usable);
+        box.setFocusable(usable);
+        box.setClickable(usable);
+        box.setAlpha(usable ? 1f : 0.4f);
+        if (!usable && wasFocused && launchKeyEnabledSwitch != null) {
+            View row = (View) launchKeyEnabledSwitch.getParent();
+            if (row != null) row.requestFocus();
+        }
+    }
+
+    /**
+     * Key handling for one value box:
+     *  - Back cancels an in-progress learn on this box (swallowed so it doesn't leave the screen).
+     *  - Short OK (re)assigns, via the box's OnClickListener.
+     *  - Long OK resets this box (see {@link #resetKey}); the trailing click is
+     *    swallowed so it doesn't immediately re-enter learn mode.
+     * Assignable buttons never reach here: the service captures them during learn.
+     * Modelled on {@link PickerLongPressListener} (return false on the OK DOWN so
+     * the framework tracks the press for long-press + click).
+     */
+    private class KeyBoxListener implements View.OnKeyListener {
+        private final TextView box;
+        private final IntPref pref;
+        private boolean longPressTriggered = false;
+
+        KeyBoxListener(TextView box, IntPref pref) {
+            this.box = box;
+            this.pref = pref;
+        }
+
+        @Override
+        public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
+            if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+                if (learningBox != box) return false; // not learning here: let Back leave
+                if (event.getAction() == android.view.KeyEvent.ACTION_UP) cancelLearning();
+                return true;
+            }
+            boolean isOkKey = keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+                    || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+            if (!isOkKey || learningBox != null) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                if (event.getRepeatCount() == 0) longPressTriggered = false;
+                if (event.isLongPress()) {
+                    longPressTriggered = true;
+                    resetKey(box, pref);
+                }
+                return false; // let the framework track the press (long-press + click)
+            }
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && longPressTriggered) {
+                longPressTriggered = false;
+                return true; // swallow the click that would otherwise re-assign
+            }
+            return false;
+        }
+    }
+
+    /** Hold OK on a box: clear just that mapping back to None (the toggle is left alone). */
+    private void resetKey(TextView box, IntPref pref) {
+        pref.set(Prefs.DEFAULT_LAUNCH_KEYCODE);
+        box.setText(keyFieldText(pref));
+        Toast.makeText(this, getString(R.string.launch_key_cleared), Toast.LENGTH_SHORT).show();
+    }
+
+    /** Enters learn mode for one box: the service captures the next assignable button. */
+    private void startLearning(final TextView box, final IntPref pref) {
+        learningBox = box;
+        learningPref = pref;
+        box.setText(R.string.launch_key_learning);
+        HijackService.startLearning(new HijackService.KeyLearnListener() {
+            @Override
+            public void onKeyLearned(int keyCode) {
+                // Posted on the main thread by the service.
+                learningBox = null;
+                learningPref = null;
+                pref.set(keyCode);
+                box.setText(keyFieldText(pref));
+            }
+        });
+    }
+
+    /** Leaves learn mode without binding anything (Back, focus loss, or toggle-off). */
+    private void cancelLearning() {
+        if (learningBox == null) return;
+        TextView box = learningBox;
+        IntPref pref = learningPref;
+        learningBox = null;
+        learningPref = null;
+        HijackService.stopLearning();
+        if (box != null && pref != null) box.setText(keyFieldText(pref));
+    }
+
+    /** Text for a value box: the bound key's friendly name (icon + word for media), or "None". */
+    private CharSequence keyFieldText(IntPref pref) {
+        int kc = pref.get();
+        return kc == Prefs.DEFAULT_LAUNCH_KEYCODE
+                ? getString(R.string.launch_key_none)
+                : keycodeLabel(kc);
+    }
+
+    /**
+     * Friendly name for a bound launch keycode. Covers the buttons a Fire remote
+     * actually delivers to us (colour, number, channel, media, captions/teletext);
+     * anything else falls back to the framework name with KEYCODE_ stripped.
+     */
+    private CharSequence keycodeLabel(int kc) {
+        switch (kc) {
+            // Colour buttons render as a matching coloured circle + word.
+            case android.view.KeyEvent.KEYCODE_PROG_RED: return KeyBadges.colorLabel(0, getString(R.string.key_red));
+            case android.view.KeyEvent.KEYCODE_PROG_GREEN: return KeyBadges.colorLabel(1, getString(R.string.key_green));
+            case android.view.KeyEvent.KEYCODE_PROG_YELLOW: return KeyBadges.colorLabel(2, getString(R.string.key_yellow));
+            case android.view.KeyEvent.KEYCODE_PROG_BLUE: return KeyBadges.colorLabel(3, getString(R.string.key_blue));
+            case android.view.KeyEvent.KEYCODE_CHANNEL_UP: return getString(R.string.key_channel_up);
+            case android.view.KeyEvent.KEYCODE_CHANNEL_DOWN: return getString(R.string.key_channel_down);
+            case android.view.KeyEvent.KEYCODE_CAPTIONS: return getString(R.string.key_subtitles);
+            case android.view.KeyEvent.KEYCODE_TV_TELETEXT: return getString(R.string.key_teletext);
+            // Media keys render as a vector icon + word (the Fire font shows the
+            // media Unicode glyphs as colour emoji).
+            case android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case android.view.KeyEvent.KEYCODE_MEDIA_PLAY:
+                return KeyBadges.iconLabel(this, R.drawable.ic_media_play, getString(R.string.key_play));
+            case android.view.KeyEvent.KEYCODE_MEDIA_REWIND:
+                return KeyBadges.iconLabel(this, R.drawable.ic_media_rewind, getString(R.string.key_rewind));
+            case android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+                return KeyBadges.iconLabel(this, R.drawable.ic_media_forward, getString(R.string.key_forward));
+            default: break;
+        }
+        if (kc >= android.view.KeyEvent.KEYCODE_0 && kc <= android.view.KeyEvent.KEYCODE_9) {
+            return getString(R.string.key_number, kc - android.view.KeyEvent.KEYCODE_0);
+        }
+        String name = android.view.KeyEvent.keyCodeToString(kc);
+        if (name != null && name.startsWith("KEYCODE_")) name = name.substring("KEYCODE_".length());
+        return name;
+    }
+
+    /**
+     * True on Fire OS 6/7 (API &lt;= 28), where a Home press is delayed by the
+     * system app-switch lock. The instant-shortcut tooltips use this to add the
+     * "no delay, unlike the Home button" note that only applies there.
+     */
+    private boolean isFos7OrOlder() {
+        return android.os.Build.VERSION.SDK_INT <= 28;
+    }
+
+    /**
      * Verbose-logging row. Unlike the plain switch rows this one carries a
      * second focusable control on the right: a round button that opens
      * {@link LogViewerActivity}. The button is only visible while verbose
@@ -380,7 +697,7 @@ public class MainActivity extends Activity {
 
         final LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+        row.setPadding(dp(16), dp(ROW_PAD_V), dp(16), dp(ROW_PAD_V));
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setFocusable(true);
         row.setClickable(true);
@@ -417,7 +734,7 @@ public class MainActivity extends Activity {
                 if (row.isEnabled()) sw.toggle();
             }
         });
-        row.setOnKeyListener(new VerboseLongPressListener());
+        row.setOnKeyListener(new RightNavGuard(new VerboseLongPressListener()));
         verboseRow = row;
         attachTip(row, getString(R.string.switch_verbose_tip));
 
@@ -460,6 +777,7 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(MainActivity.this, LogViewerActivity.class));
             }
         });
+        btn.setOnKeyListener(new RightNavGuard(null)); // rightmost in its row
         attachTip(btn, getString(R.string.log_button_tip));
         return btn;
     }
@@ -567,6 +885,87 @@ public class MainActivity extends Activity {
     }
 
     /**
+     * OnKeyListener that stops a d-pad RIGHT from jumping to a different row: it
+     * only lets RIGHT through when the next focusable to the right sits in the
+     * same row (a real right-hand button). Wraps an optional delegate for rows
+     * that also handle OK / Back etc.
+     */
+    private static class RightNavGuard implements View.OnKeyListener {
+        private final View.OnKeyListener delegate;
+        RightNavGuard(View.OnKeyListener delegate) { this.delegate = delegate; }
+
+        @Override
+        public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
+            if (delegate != null && delegate.onKey(v, keyCode, event)) return true;
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                View target = v.focusSearch(View.FOCUS_RIGHT);
+                if (target == null || !sameRow(v, target)) return true; // no right button in this row
+            }
+            return false;
+        }
+    }
+
+    /** True when {@code from}'s vertical centre falls within {@code to}'s bounds (i.e. same row). */
+    private static boolean sameRow(View from, View to) {
+        int[] pf = new int[2];
+        int[] pt = new int[2];
+        from.getLocationOnScreen(pf);
+        to.getLocationOnScreen(pt);
+        int fromCenterY = pf[1] + from.getHeight() / 2;
+        return fromCenterY >= pt[1] && fromCenterY <= pt[1] + to.getHeight();
+    }
+
+    /**
+     * Explicit up/down focus wiring for the right-hand controls (launch button,
+     * launch-key box, log button). Without it, d-pad UP/DOWN hops between those
+     * vertically-aligned right-column controls instead of moving to the
+     * full-width row directly above/below.
+     */
+    private void wireVerticalNav() {
+        View accessRow = rowOf(accessSwitch);
+        View appsRow = rowOf(appsRedirectSwitch);
+        View bootRow = rowOf(bootSwitch);
+        View menuRow = rowOf(menuLpSwitch);
+        ensureId(accessRow);
+        ensureId(appsRow);
+        ensureId(bootRow);
+        ensureId(menuRow);
+        ensureId(launchKeyRow);
+        if (launchBtn != null && accessRow != null) {
+            launchBtn.setNextFocusDownId(accessRow.getId());
+        }
+        // Pin the map-custom-buttons switch-row into the row chain so d-pad UP/DOWN
+        // never lands on (or skips past) the two value boxes beside it; the boxes
+        // are reached only via RIGHT.
+        if (launchKeyRow != null) {
+            if (appsRow != null) {
+                appsRow.setNextFocusDownId(launchKeyRow.getId());
+                launchKeyRow.setNextFocusUpId(appsRow.getId());
+            }
+            if (bootRow != null) {
+                bootRow.setNextFocusUpId(launchKeyRow.getId());
+                launchKeyRow.setNextFocusDownId(bootRow.getId());
+            }
+        }
+        for (TextView box : new TextView[]{launcherBox, amazonBox}) {
+            if (box == null) continue;
+            if (appsRow != null) box.setNextFocusUpId(appsRow.getId());
+            if (bootRow != null) box.setNextFocusDownId(bootRow.getId());
+        }
+        if (logBtn != null && menuRow != null) {
+            logBtn.setNextFocusUpId(menuRow.getId());
+        }
+    }
+
+    private static View rowOf(View child) {
+        return child == null ? null : (View) child.getParent();
+    }
+
+    private static void ensureId(View v) {
+        if (v != null && v.getId() == View.NO_ID) v.setId(View.generateViewId());
+    }
+
+    /**
      * Focusable row shell shared by the tuning rows: padded horizontal layout with
      * the focus background and a weight-1 label on the left. Callers append their
      * own right-hand content and listeners.
@@ -574,7 +973,7 @@ public class MainActivity extends Activity {
     private LinearLayout makeTuningRowShell(String label) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+        row.setPadding(dp(16), dp(ROW_PAD_V), dp(16), dp(ROW_PAD_V));
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setFocusable(true);
         row.setBackground(getDrawable(R.drawable.row_focus_bg));
@@ -680,6 +1079,14 @@ public class MainActivity extends Activity {
         refresh();
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Don't leave a learn listener (and the Activity refs it captures) live
+        // while backgrounded; the user can restart learning on return.
+        if (learningBox != null) cancelLearning();
+    }
+
     /** Builds the persistent brand-coloured title bar with logo, name and info button. */
     private LinearLayout buildTopBar() {
         LinearLayout bar = new LinearLayout(this);
@@ -748,7 +1155,7 @@ public class MainActivity extends Activity {
                                   CompoundButton.OnCheckedChangeListener listener) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+        row.setPadding(dp(16), dp(ROW_PAD_V), dp(16), dp(ROW_PAD_V));
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setFocusable(true);
         row.setClickable(true);
@@ -779,6 +1186,8 @@ public class MainActivity extends Activity {
                 if (row.isEnabled()) sw.toggle();
             }
         });
+        // Switch rows have no right-hand button; don't let RIGHT jump to another row.
+        row.setOnKeyListener(new RightNavGuard(null));
         attachTip(row, tip);
 
         root.addView(row);
@@ -900,8 +1309,18 @@ public class MainActivity extends Activity {
             bootSwitch.setChecked(prefs.getLaunchOnBoot());
             verboseSwitch.setChecked(prefs.isVerboseLogging());
             menuLpSwitch.setChecked(prefs.isMenuLongPressLaunch());
+            appsRedirectSwitch.setChecked(prefs.isAppsButtonRedirect());
+            launchKeyEnabledSwitch.setChecked(prefs.isLaunchKeyEnabled());
         } finally {
             suppressSwitchEvents = false;
+        }
+        // Not switches, but the same "re-read prefs" moment; skip the box that is
+        // mid-learn so we don't overwrite its "Press a button…" prompt.
+        if (launcherBox != null && learningBox != launcherBox) {
+            launcherBox.setText(keyFieldText(launcherPref()));
+        }
+        if (amazonBox != null && learningBox != amazonBox) {
+            amazonBox.setText(keyFieldText(amazonPref()));
         }
     }
 
@@ -918,6 +1337,10 @@ public class MainActivity extends Activity {
         setRowEnabled(bootSwitch, accessOn);
         setRowEnabled(verboseSwitch, accessOn);
         setRowEnabled(menuLpSwitch, accessOn);
+        setRowEnabled(appsRedirectSwitch, accessOn);
+        setRowEnabled(launchKeyEnabledSwitch, accessOn);
+        // The value box is gated on both the service AND the shortcut toggle.
+        updateLaunchKeyBoxState();
         updateLogButtonVisibility();
         // The tuning section's only reveal/hide anchor is the verbose row, which is
         // unfocusable while the service is off; collapse the section so it cannot
