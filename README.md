@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/toolicious/home-on-fire/releases/latest"><img src="https://img.shields.io/github/v/release/toolicious/home-on-fire?label=release" alt="Latest release"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/toolicious/home-on-fire" alt="License"></a>
-  <img src="https://img.shields.io/badge/platform-Fire%20OS%207%20%26%208-B61414" alt="Platform: Fire OS 7 and 8">
+  <img src="https://img.shields.io/badge/Fire%20OS-7%20%26%208-B61414" alt="Fire OS 7 and 8">
 </p>
 
 # Home on Fire
