@@ -21,7 +21,7 @@ on current Fire OS 8.x (as of May 2026), and on Fire OS 7
 (see [Compatibility](#compatibility)), because it redirects the
 <kbd>⌂ Home</kbd> button rather than trying to override the home activity itself.
 
-> [!CAUTION]
+> [!IMPORTANT]
 > **Fire OS 7 shows a brief loading animation when you press Home. Fire OS 8 does not.**
 >
 > On Fire OS 7 and older, the system holds back any app opened by the Home button for up to about 5 seconds (an "app-switch lock"). This delay cannot be removed without root, so Home on Fire covers it with a loading animation that fades into your launcher. In practice it is usually much shorter (often about a second) and clears the moment your launcher is ready. Fire OS 8 has no such delay and shows no animation at all.
