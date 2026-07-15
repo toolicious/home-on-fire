@@ -21,6 +21,15 @@ on current Fire OS 8.x (as of May 2026), and on Fire OS 7
 (see [Compatibility](#compatibility)), because it redirects the
 <kbd>⌂ Home</kbd> button rather than trying to override the home activity itself.
 
+> [!CAUTION]
+> **Fire OS 7 shows a brief loading animation when you press Home. Fire OS 8 does not.**
+>
+> On Fire OS 7 and older, the system holds back any app opened by the Home button for up to about 5 seconds (an "app-switch lock"). This delay cannot be removed without root, so Home on Fire covers it with a loading animation that fades into your launcher. In practice it is usually much shorter (often about a second) and clears the moment your launcher is ready. Fire OS 8 has no such delay and shows no animation at all.
+>
+> **To get an instant launch with no animation, you have two options:**
+> - **Use a Fire OS 8 device.** The Home button is already instant there.
+> - **Map a spare remote button** (in the app, under **Map custom buttons**). Bind a color, number or media key to your launcher; that shortcut never goes through Home, so it skips the delay and shows no animation. You can map a second button to jump to Amazon's home.
+
 <!-- App configuration screen -->
 
 ![Home on Fire configuration screen](docs/screenshot.png)
@@ -152,7 +161,7 @@ it stays the OS-level home activity.
 | **Replace <kbd>⌂ Home</kbd> button** | Short-press in a third-party app opens your target instead of Amazon's home. Double-press within 1 s escapes to Amazon's home (leave a short pause between the two presses; a mouse-click-speed double-press may just reopen the target). Long-press is the most reliable escape and toggles between target and Amazon's home. <kbd>↩ Back</kbd> or <kbd>◉ OK</kbd> on the focused Home icon returns to target. |
 | **Launch on boot** | Optionally launches the target app right after device boot and on wake from standby, so the device shows your launcher instead of Amazon's home in both cases. |
 | **<kbd>☰ Menu</kbd> long-press shortcut** | Hold the <kbd>☰ Menu</kbd> button for half a second from inside the target or any Amazon screen. Opens our config screen. |
-| **Map custom buttons** | Bind a spare remote button to open your target launcher directly, and another to jump to Amazon's home screen. No Fire OS 7 Home delay. Bindable buttons: colour, number, channel ±, subtitles, teletext, media keys. Opt-in, off by default. |
+| **Map custom buttons** | Bind a spare remote button to open your target launcher directly, and another to jump to Amazon's home screen. No Fire OS 7 Home delay. Bindable buttons: color, number, channel ±, subtitles, teletext, media keys. Opt-in, off by default. |
 | **Replace <kbd>⊞ Apps</kbd> button** | Optionally make the remote's Apps button open your target launcher. Amazon's app grid flashes up briefly first. Opt-in, off by default. |
 
 ---
