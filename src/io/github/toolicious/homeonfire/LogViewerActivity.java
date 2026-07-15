@@ -81,7 +81,7 @@ public class LogViewerActivity extends Activity {
         if (okButton != null) okButton.requestFocus();
     }
 
-    /** Brand-coloured title bar with the screen name and the app version. */
+    /** Brand-colored title bar with the screen name and the app version. */
     private LinearLayout buildTopBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);

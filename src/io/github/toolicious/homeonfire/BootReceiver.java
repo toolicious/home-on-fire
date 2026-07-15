@@ -15,7 +15,7 @@ import android.util.Log;
  *
  * The action is only taken when the user has explicitly enabled the
  * "launch on boot" option AND our accessibility service is enabled
- * (the config UI greys launch-on-boot out as a dependency of the
+ * (the config UI grays launch-on-boot out as a dependency of the
  * service, so the two must agree); otherwise we do nothing and the
  * standard Amazon boot flow proceeds.
  */
@@ -31,7 +31,7 @@ public class BootReceiver extends BroadcastReceiver {
         Prefs prefs = new Prefs(ctx);
         if (!prefs.getLaunchOnBoot()) return;
         // Honour the dependency the UI advertises: with the accessibility
-        // service off, the greyed-out boot switch should be truthful and
+        // service off, the grayed-out boot switch should be truthful and
         // no boot launch happens.
         if (!AccessibilityHelper.isOurServiceEnabled(ctx)) return;
 

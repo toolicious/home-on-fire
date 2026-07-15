@@ -2,7 +2,7 @@
 <!--
     Amazon Apps-button glyph for the "Replace Apps button" keycap: a 2x2 grid
     with three rounded squares and a plus in the bottom-right cell. Tinted at
-    runtime to the badge colour (see KeyBadges).
+    runtime to the badge color (see KeyBadges).
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"

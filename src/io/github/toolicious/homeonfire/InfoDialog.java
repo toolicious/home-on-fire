@@ -23,7 +23,7 @@ import android.widget.Toast;
  * through {@link #show(Activity)}.
  *
  * Built programmatically (no XML layout) so the logo can sit above
- * the text and the OK button can be vertically aligned on the centre
+ * the text and the OK button can be vertically aligned on the center
  * axis. AlertDialog's own positive button would otherwise live
  * right-aligned at the bottom.
  */
@@ -133,7 +133,7 @@ public final class InfoDialog {
         // bottom on short screens or large display-font scales (AlertDialog
         // does not auto-scroll a custom setView panel). The scroller is
         // transparent, so the opaque Colors.TIP_BG fill stays on `body`
-        // and the FLAG_DIM_BEHIND behaviour is unaffected.
+        // and the FLAG_DIM_BEHIND behavior is unaffected.
         ScrollView scroller = new ScrollView(host);
         scroller.addView(body);
         final AlertDialog dialog = new AlertDialog.Builder(
@@ -177,7 +177,7 @@ public final class InfoDialog {
     }
 
     /**
-     * Underlined, focusable, clickable centred text line: the visual
+     * Underlined, focusable, clickable centered text line: the visual
      * style used for both the GitHub repo link and the Fire-OS-settings
      * shortcut. Shares row_focus_bg so the focus highlight matches the
      * rest of the app.
@@ -198,7 +198,7 @@ public final class InfoDialog {
     }
 
     /**
-     * Builds a TextView that fills the parent width and centres its
+     * Builds a TextView that fills the parent width and centers its
      * text. Every line in the dialog uses this so the column lines up
      * regardless of intrinsic text width.
      */

@@ -17,7 +17,7 @@ public final class Colors {
     /** Mirrors {@code @color/text_white}. */
     public static final int WHITE = 0xFFFFFFFF;
 
-    /** Mirrors {@code @color/text_neutral}. Light grey for labels. */
+    /** Mirrors {@code @color/text_neutral}. Light gray for labels. */
     public static final int NEUTRAL = 0xFFE0E0E0;
 
     /** Mirrors {@code @color/surface_tip_box}. The pinned tip strip. */

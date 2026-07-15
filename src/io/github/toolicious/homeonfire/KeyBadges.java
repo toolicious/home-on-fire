@@ -17,7 +17,7 @@ import android.text.style.ReplacementSpan;
  *  - text keys ("Home", "Back", "OK", "Menu"): a Unicode glyph plus the word, boxed;
  *  - icon keys ("Apps"): a vector icon plus the word, boxed;
  *  - inline media icons (rewind / play / fast-forward): a vector icon with no box,
- *    because the Fire TV font renders the media glyphs as colour emoji.
+ *    because the Fire TV font renders the media glyphs as color emoji.
  * Non-ASCII glyphs are written as \\u escapes so the source stays byte-identical
  * to the matching strings.xml tokens.
  */
@@ -60,12 +60,12 @@ public final class KeyBadges {
     private static final char MEDIA_PLAY    = '⏵';
     private static final char MEDIA_FORWARD = '⏩';
 
-    /** Fill colours for the four remote colour-button circles (red, green, yellow, blue). */
+    /** Fill colors for the four remote color-button circles (red, green, yellow, blue). */
     private static final int[] DOT_COLORS = {0xFFFF5252, 0xFF4CAF50, 0xFFFFEB3B, 0xFF448AFF};
 
     /**
      * Scans {@code text} for any known key token and decorates each occurrence:
-     * a boxed text/icon keycap, an inline media icon, or a coloured circle.
+     * a boxed text/icon keycap, an inline media icon, or a colored circle.
      */
     public static CharSequence wrap(Context ctx, CharSequence text) {
         int padHor = UiUtil.dp(ctx, 5);
@@ -94,8 +94,8 @@ public final class KeyBadges {
         applyMediaIcon(ctx, out, src, MEDIA_PLAY,    R.drawable.ic_media_play,    padVer);
         applyMediaIcon(ctx, out, src, MEDIA_FORWARD, R.drawable.ic_media_forward, padVer);
 
-        // Tint the "coloured buttons" circles so the launch-key tooltip shows the
-        // actual button colours instead of the colour words.
+        // Tint the "colored buttons" circles so the launch-key tooltip shows the
+        // actual button colors instead of the color words.
         for (int ci = 0, from = 0; ci < DOT_COLORS.length; ci++) {
             int idx = src.indexOf('●', from);
             if (idx < 0) break;
@@ -128,7 +128,7 @@ public final class KeyBadges {
     }
 
     /**
-     * Inline "coloured circle + label", used to show a bound colour button in the
+     * Inline "colored circle + label", used to show a bound color button in the
      * value box, e.g. a red dot followed by "Red". {@code colorIndex} indexes
      * {@link #DOT_COLORS} (0=red, 1=green, 2=yellow, 3=blue), the same palette as
      * the tooltip circles.
@@ -215,7 +215,7 @@ public final class KeyBadges {
             }
             if (icon != null) {
                 float h = iconSize(paint);
-                // Centre the icon vertically within the text's ascent..descent band.
+                // Center the icon vertically within the text's ascent..descent band.
                 float iconTop = y + paint.ascent() + ((paint.descent() - paint.ascent()) - h) / 2f;
                 int ix = Math.round(x + hp);
                 int iy = Math.round(iconTop);

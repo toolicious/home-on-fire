@@ -70,7 +70,7 @@ public class LoaderView extends View {
             INOUT_CUBIC = 3, INOUT_SINE = 4, OUT_BACK = 5, IN_CUBIC = 6;
 
     // ── Choreography keyframe tables (from scene.jsx) ─────────────────────────
-    // Horizontal centre of the "a": barges in from the right, shoved back three
+    // Horizontal center of the "a": barges in from the right, shoved back three
     // times, creeps to its closest point, then the cursor flings it off-screen.
     // Deviation from the source: the fly-in segment (0.55-1.15) is LINEAR, not
     // ease-out, so the "a" arrives at full speed and only brakes in the recoil
@@ -79,7 +79,7 @@ public class LoaderView extends View {
     private static final float[] AX_V = {2360f, 2360f, 1205f, 1520f, 1070f, 1370f, 1035f, 1245f,  980f,  928f,  928f,  3160f, 3160f};
     private static final int[]   AX_E = {LINEAR, LINEAR, OUT_QUAD, INOUT_CUBIC, OUT_QUAD, INOUT_CUBIC, OUT_QUAD, OUT_CUBIC, OUT_CUBIC, LINEAR, OUT_CUBIC, LINEAR};
 
-    // Vertical centre: small living bob during the tussle, lift up on launch.
+    // Vertical center: small living bob during the tussle, lift up on launch.
     private static final float[] AY_T = {0.00f, 1.15f, 1.85f, 2.55f, 3.25f, 3.80f, 4.30f, 4.58f, T_GONE, T_END};
     private static final float[] AY_V = {CY, CY, CY - 18f, CY + 13f, CY - 15f, CY, CY + 8f, CY + 8f, CY - 300f, CY - 300f};
     private static final int[]   AY_E = {INOUT_SINE, INOUT_SINE, INOUT_SINE, INOUT_SINE, INOUT_SINE, INOUT_SINE, LINEAR, OUT_CUBIC, LINEAR};
@@ -94,7 +94,7 @@ public class LoaderView extends View {
     private static final float[] AS_V = {0.50f, 0.50f, 1.00f, 1.00f, 1.00f, 1.14f, 0.26f, 0.26f};
     private static final int[]   AS_E = {LINEAR, OUT_BACK, LINEAR, LINEAR, OUT_QUAD, IN_CUBIC, LINEAR};
 
-    // Cursor (FireTV focus ring): rests at screen centre, gets bumped aside by
+    // Cursor (FireTV focus ring): rests at screen center, gets bumped aside by
     // the incoming "a", jabs it back, then swipes up-right to fling it away.
     // Single easing (easeInOutCubic).
     private static final float[] MX_T = {0.00f, 0.55f, 1.02f, 1.22f, 1.70f, 2.02f, 2.20f, 2.70f, 2.90f, 3.08f, 3.55f, 4.18f, 4.50f, 4.62f, 4.78f, 5.20f, T_END};
@@ -121,14 +121,14 @@ public class LoaderView extends View {
     private final Paint capPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Typeface heavy;
     private final Typeface captionFace;
-    /** Centred baseline for the hero "a", precomputed so onDraw never allocates FontMetrics. */
+    /** Centered baseline for the hero "a", precomputed so onDraw never allocates FontMetrics. */
     private final float glyphBaseline;
 
     private String captionLoading = "LOADING…";
     private String captionReady = "READY";
 
     // Cached, design-space shaders (independent of view size).
-    private RadialGradient glowShader;   // centre breathing glow
+    private RadialGradient glowShader;   // center breathing glow
     private RadialGradient vignette;     // edge darkening
     private RadialGradient haloShader;   // halo behind the "a"
     private LinearGradient fillShader;   // progress-bar fill
@@ -144,7 +144,7 @@ public class LoaderView extends View {
         Typeface m = Typeface.create("sans-serif-medium", Typeface.NORMAL);
         captionFace = (m != null) ? m : Typeface.DEFAULT;
         // glyphPaint draws only the hero "a": configure it once here and cache the
-        // centred baseline instead of allocating FontMetrics on every frame (the
+        // centered baseline instead of allocating FontMetrics on every frame (the
         // overlay runs ~5s at 60 fps on the low-RAM Fire OS 7 devices).
         glyphPaint.setTypeface(heavy);
         glyphPaint.setTextSize(460f);
@@ -332,7 +332,7 @@ public class LoaderView extends View {
         return t;
     }
 
-    // Warm backdrop: breathing centre glow + vignette.
+    // Warm backdrop: breathing center glow + vignette.
     private void drawBackdrop(Canvas c, float t) {
         float breathe = 0.5f + 0.5f * (float) Math.sin((t / T_END) * Math.PI * 2d);
         paint.setShader(glowShader);
@@ -460,7 +460,7 @@ public class LoaderView extends View {
         paint.setColor(withAlpha(0xFFFFFFFF, op * 0.95f));
         c.drawCircle(0f, 0f, 38f, paint);
         paint.setStyle(Paint.Style.FILL);
-        // centre dot
+        // center dot
         paint.setColor(withAlpha(0xFFFFFFFF, op));
         c.drawCircle(0f, 0f, 5.5f, paint);
         c.restore();

@@ -169,7 +169,7 @@ public class TargetPickerActivity extends Activity {
             TextView pkg = new TextView(ctx);
             pkg.setText(item.pkg);
             pkg.setTextSize(12);
-            // Dim grey for the package-name subtitle; not part of the
+            // Dim gray for the package-name subtitle; not part of the
             // named colors.xml palette.
             pkg.setTextColor(0xFFAAAAAA);
             text.addView(pkg);

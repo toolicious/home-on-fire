@@ -123,7 +123,7 @@ public class HijackService extends AccessibilityService {
      * Single Prefs instance for the lifetime of the service. The
      * SharedPreferences object inside is itself singleton-cached by
      * the framework, so this just spares us repeatedly wrapping it.
-     * Initialised in {@link #onServiceConnected}.
+     * Initialized in {@link #onServiceConnected}.
      */
     private Prefs prefs;
 
@@ -225,7 +225,7 @@ public class HijackService extends AccessibilityService {
     /**
      * Pending Menu-long-press fire, or {@code null} if no Menu key is
      * currently held. Scheduled on ACTION_DOWN of the Menu key, ran
-     * after {@link #MENU_LONG_PRESS_THRESHOLD_MS} unless cancelled by
+     * after {@link #MENU_LONG_PRESS_THRESHOLD_MS} unless canceled by
      * an earlier ACTION_UP. Firing during the press (rather than on
      * release) makes the shortcut feel immediate.
      */
@@ -303,6 +303,15 @@ public class HijackService extends AccessibilityService {
     private static final long RECENT_OK_WINDOW_MS = 1_500L;
 
     /**
+     * How recently an OK/Back must have been seen for an Amazon-home arrival out of
+     * Amazon's own shell to count as deliberate navigation rather than a Home press
+     * (see {@link #handleAmazonHomeArrival}). Sized against the real thing: picking
+     * "Inputs" from the navigation drawer put the arrival ~0.7s after the OK, so this
+     * leaves generous headroom for a slower hand-off.
+     */
+    private static final long AMAZON_SHELL_NAV_WINDOW_MS = 2_000L;
+
+    /**
      * Set by the window-state handler whenever a foreground change is
      * observed. Read by {@link #onKeyEvent} to decide whether to
      * intercept Back. {@code volatile} because the two callbacks may
@@ -312,7 +321,7 @@ public class HijackService extends AccessibilityService {
 
     /**
      * Foreground package the user just came from. We need this to
-     * recognise the "user held Home inside the target app" pattern:
+     * recognize the "user held Home inside the target app" pattern:
      * Quick-Settings appears with the target as the immediately
      * preceding foreground. {@code volatile} because the field is
      * read by code paths that may run on different threads than the
@@ -320,6 +329,19 @@ public class HijackService extends AccessibilityService {
      */
     private volatile String previousForegroundPkg = null;
     private volatile String currentForegroundPkg = null;
+
+    /**
+     * Activity class of those same two foregrounds. Tracked alongside the
+     * package because Amazon's home shell keeps HomeActivity_vNext and its
+     * navigation drawer (com.amazon.tv.launcher.navigation.NavigationActivity)
+     * in ONE package. With package-only tracking, a return from the drawer
+     * leaves prev pointing at the last real app, so
+     * {@link #handleAmazonHomeArrival} reads it as "Amazon home came up from
+     * the target launcher", i.e. a Home press, and fires a redirect the user
+     * never asked for (seen when picking "Inputs" from the drawer).
+     */
+    private volatile String previousForegroundCls = null;
+    private volatile String currentForegroundCls = null;
 
     /**
      * Bounds of the launcher's Home tab. Captured once per service
@@ -370,11 +392,20 @@ public class HijackService extends AccessibilityService {
         CharSequence cls = event.getClassName();
         String pkgStr = pkg != null ? pkg.toString() : null;
 
-        // Foreground tracking. Updated only on package change so
-        // intermediate events for the same window don't shift state.
-        if (pkgStr != null && !pkgStr.equals(currentForegroundPkg)) {
+        // Foreground tracking, at activity granularity rather than package:
+        // a move inside a single package (Amazon's drawer back to its home)
+        // has to be visible here, otherwise it reads as a fresh arrival from
+        // whatever real app came before the whole visit. Transient container
+        // windows (the android.* decor that fires mid-handoff, and our own
+        // overlay) are skipped so they cannot shift the trackers either.
+        String clsStr = cls != null ? cls.toString() : null;
+        if (pkgStr != null && isRealContentClass(clsStr)
+                && (!pkgStr.equals(currentForegroundPkg)
+                    || !clsStr.equals(currentForegroundCls))) {
             previousForegroundPkg = currentForegroundPkg;
+            previousForegroundCls = currentForegroundCls;
             currentForegroundPkg = pkgStr;
+            currentForegroundCls = clsStr;
         }
 
         // Drive the masking-overlay teardown from the target's window events. We wait
@@ -398,6 +429,7 @@ public class HijackService extends AccessibilityService {
         if (prefs.isVerboseLogging()) {
             Log.i(TAG, "verbose win pkg=" + pkg + " cls=" + cls
                     + " prev=" + previousForegroundPkg
+                    + " prevCls=" + previousForegroundCls
                     + " amazonHome=" + isAmazonHome
                     + " cached=" + (cachedHomeTabBounds == null
                             ? "null"
@@ -539,13 +571,28 @@ public class HijackService extends AccessibilityService {
         if (target == null || target.isEmpty() || target.equals(getPackageName())) return;
 
         String prev = previousForegroundPkg;
-        // Skip only while the user moves within Amazon's own home shell (launcher /
-        // settings / quicksettings, none of which expose a Leanback launcher entry).
-        // Returning from a full Amazon app such as Prime Video (com.amazon.firebat, which
-        // does have one) should redirect to the target like any other app.
-        if (prev != null && prev.startsWith("com.amazon.") && !isLeanbackLaunchable(prev)) return;
-
         long now = System.currentTimeMillis();
+        // Arrivals out of Amazon's own home shell (launcher / settings / quicksettings,
+        // none of which expose a Leanback launcher entry; a full Amazon app such as Prime
+        // Video does have one and redirects like any other app).
+        //
+        // Only a DELIBERATE move through that shell should be left alone, and every such
+        // move leaves a visible key behind: Back to leave a settings page, OK to pick an
+        // entry in the navigation drawer. A Home press leaves none, because the firmware
+        // eats KEYCODE_HOME before any service sees it. So the ABSENCE of a recent OK/Back
+        // is what identifies a Home press, and Home has to reach the target from inside
+        // Amazon's settings just like it does everywhere else. D-pad keys deliberately do
+        // not count: navigating to an entry and then pressing Home is still a Home press.
+        if (prev != null && prev.startsWith("com.amazon.") && !isLeanbackLaunchable(prev)
+                && isRecentShellNavKey(now)) {
+            if (prefs.isVerboseLogging()) {
+                Log.i(TAG, "Auto-hijack skipped: deliberate move inside the Amazon shell"
+                        + " (prev=" + prev + " key=" + lastKeyCode
+                        + " " + (now - lastKeyTime) + "ms ago)");
+            }
+            return;
+        }
+
         if (now < bypassUntil) return;
 
         if (now - lastHijackAt < HIJACK_DEBOUNCE_MS) {
@@ -581,6 +628,20 @@ public class HijackService extends AccessibilityService {
         if (now < bypassUntil) return;
         if (now - lastHijackAt < HIJACK_DEBOUNCE_MS) return;
         launchTarget(target, "Redirect from Apps grid", false);
+    }
+
+    /**
+     * True when the last key we saw was an OK or a Back within
+     * {@link #AMAZON_SHELL_NAV_WINDOW_MS}. Those are the only keys a deliberate move
+     * through Amazon's home shell can leave behind (Back to leave a settings page, OK to
+     * pick a drawer entry). A Home press leaves none, since the firmware intercepts it,
+     * so a {@code false} here means the arrival we are looking at was a Home press.
+     */
+    private boolean isRecentShellNavKey(long now) {
+        boolean isNavKey = lastKeyCode == KeyEvent.KEYCODE_DPAD_CENTER
+                || lastKeyCode == KeyEvent.KEYCODE_ENTER
+                || lastKeyCode == KeyEvent.KEYCODE_BACK;
+        return isNavKey && (now - lastKeyTime) < AMAZON_SHELL_NAV_WINDOW_MS;
     }
 
     /**
@@ -760,7 +821,7 @@ public class HijackService extends AccessibilityService {
     /**
      * Menu long-press scheduling. Fires on threshold (not on release)
      * so the shortcut feels responsive. The pending Runnable is
-     * cancelled when Menu UPs before the threshold passes.
+     * canceled when Menu UPs before the threshold passes.
      */
     private void handleMenuKey(KeyEvent event, int keyCode) {
         if (keyCode != KeyEvent.KEYCODE_MENU) return;
@@ -1147,7 +1208,7 @@ public class HijackService extends AccessibilityService {
     /**
      * True for keys the user may bind as a launch key. Excludes the navigation
      * and system keys the config screen needs (d-pad, OK/Enter, Back, Menu,
-     * Home) so it stays operable while learning; everything else (colour,
+     * Home) so it stays operable while learning; everything else (color,
      * number, media, captions, teletext, ...) is fair game.
      */
     private static boolean isAssignableKey(int keyCode) {

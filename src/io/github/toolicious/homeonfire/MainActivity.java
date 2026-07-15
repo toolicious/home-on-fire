@@ -22,7 +22,7 @@ import android.widget.Toast;
  * Configuration UI of Home on Fire.
  *
  * Layout:
- *  - Brand-coloured top bar with the app logo, name and a round info
+ *  - Brand-colored top bar with the app logo, name and a round info
  *    button on the right that opens a modal info dialog.
  *  - Scrollable content area with one row per setting (target app,
  *    accessibility, Replace Home, launch on boot, Menu long-press,
@@ -457,7 +457,7 @@ public class MainActivity extends Activity {
         outer.addView(row, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        // Two labelled value boxes on the right: target launcher, then Amazon home.
+        // Two labeled value boxes on the right: target launcher, then Amazon home.
         launchKeyEnabledSwitch = sw;
         launchKeyRow = row;
         launcherBox = addKeyBox(outer, getString(R.string.launch_key_launcher_label),
@@ -465,7 +465,7 @@ public class MainActivity extends Activity {
         amazonBox = addKeyBox(outer, getString(R.string.launch_key_amazon_label),
                 amazonPref(), dp(18), R.string.launch_key_amazon_box_tip);
 
-        updateLaunchKeyBoxState(); // start greyed/unfocusable if the shortcut is off
+        updateLaunchKeyBoxState(); // start grayed/unfocusable if the shortcut is off
         content.addView(outer);
     }
 
@@ -525,7 +525,7 @@ public class MainActivity extends Activity {
 
     /**
      * The value box is usable only when the accessibility service is on AND the
-     * launch-key shortcut is enabled. When it isn't, grey it out and take it out
+     * launch-key shortcut is enabled. When it isn't, gray it out and take it out
      * of the focus order so it can't be selected; the binding itself is kept.
      */
     private void updateLaunchKeyBoxState() {
@@ -535,7 +535,7 @@ public class MainActivity extends Activity {
         setBoxUsable(amazonBox, usable);
     }
 
-    /** Enables/greys one value box; if it loses focusability while focused, moves focus off it. */
+    /** Enables/grays one value box; if it loses focusability while focused, moves focus off it. */
     private void setBoxUsable(TextView box, boolean usable) {
         if (box == null) return;
         boolean wasFocused = box.isFocused();
@@ -640,12 +640,12 @@ public class MainActivity extends Activity {
 
     /**
      * Friendly name for a bound launch keycode. Covers the buttons a Fire remote
-     * actually delivers to us (colour, number, channel, media, captions/teletext);
+     * actually delivers to us (color, number, channel, media, captions/teletext);
      * anything else falls back to the framework name with KEYCODE_ stripped.
      */
     private CharSequence keycodeLabel(int kc) {
         switch (kc) {
-            // Colour buttons render as a matching coloured circle + word.
+            // Color buttons render as a matching colored circle + word.
             case android.view.KeyEvent.KEYCODE_PROG_RED: return KeyBadges.colorLabel(0, getString(R.string.key_red));
             case android.view.KeyEvent.KEYCODE_PROG_GREEN: return KeyBadges.colorLabel(1, getString(R.string.key_green));
             case android.view.KeyEvent.KEYCODE_PROG_YELLOW: return KeyBadges.colorLabel(2, getString(R.string.key_yellow));
@@ -655,7 +655,7 @@ public class MainActivity extends Activity {
             case android.view.KeyEvent.KEYCODE_CAPTIONS: return getString(R.string.key_subtitles);
             case android.view.KeyEvent.KEYCODE_TV_TELETEXT: return getString(R.string.key_teletext);
             // Media keys render as a vector icon + word (the Fire font shows the
-            // media Unicode glyphs as colour emoji).
+            // media Unicode glyphs as color emoji).
             case android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
             case android.view.KeyEvent.KEYCODE_MEDIA_PLAY:
                 return KeyBadges.iconLabel(this, R.drawable.ic_media_play, getString(R.string.key_play));
@@ -756,7 +756,7 @@ public class MainActivity extends Activity {
     /**
      * Round button on the right of the verbose row that opens the
      * full-screen diagnostic log. A "description" vector icon tinted via
-     * the same colour selector as the header info button and the target
+     * the same color selector as the header info button and the target
      * launch button (white normally, brand red on focus), so it stays
      * crisp and consistent at any density.
      */
@@ -905,7 +905,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** True when {@code from}'s vertical centre falls within {@code to}'s bounds (i.e. same row). */
+    /** True when {@code from}'s vertical center falls within {@code to}'s bounds (i.e. same row). */
     private static boolean sameRow(View from, View to) {
         int[] pf = new int[2];
         int[] pt = new int[2];
@@ -1087,7 +1087,7 @@ public class MainActivity extends Activity {
         if (learningBox != null) cancelLearning();
     }
 
-    /** Builds the persistent brand-coloured title bar with logo, name and info button. */
+    /** Builds the persistent brand-colored title bar with logo, name and info button. */
     private LinearLayout buildTopBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
@@ -1327,7 +1327,7 @@ public class MainActivity extends Activity {
     /**
      * The four feature switches (Replace Home, Launch on boot, Verbose
      * logging, Menu long-press) only do anything when the accessibility
-     * service is enabled. Grey them out when it isn't so the UI makes
+     * service is enabled. Gray them out when it isn't so the UI makes
      * the dependency obvious.
      */
     private void updateDependentSwitches() {
