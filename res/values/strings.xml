@@ -31,6 +31,13 @@
     <string name="switch_hijack">Replace ⌂ Home button</string>
     <string name="switch_hijack_tip">Pressing ⌂ Home from any third-party app opens the target app instead of the Amazon home screen.\nDouble-press ⌂ Home about a second apart, or long-press it, in the target app to escape to the Amazon home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon on the Amazon home screen is focused to open the target app.</string>
     <string name="switch_hijack_tip_fos7">Pressing ⌂ Home from any third-party app opens the target app instead of the Amazon home screen.\nOn Fire OS 7 the system holds a Home press for up to 5 seconds; a loading animation covers the wait. The mapped launcher button or ⊞ Apps button below open instantly instead.\nDouble-press ⌂ Home about a second apart, or long-press it, in the target app to escape to the Amazon home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon on the Amazon home screen is focused to open the target app.</string>
+    <!-- Fire OS 7 only: what covers Amazon\'s home during the ~5 s Home delay
+         (shown on the right of the Replace Home row). -->
+    <string name="mask_cover_label">Loading screen:</string>
+    <string name="mask_cover_animation">Animation</string>
+    <string name="mask_cover_black">Black screen</string>
+    <string name="mask_cover_tip">On Fire OS 7 the system holds a ⌂ Home press for up to 5 seconds. This chooses what covers Amazon\'s home during the wait. Animation plays a short loading scene. Black screen shows a plain black screen with a loading message. Fire OS 8 has no delay, so nothing is shown. Hold ◉ OK to preview the current choice.</string>
+
     <string name="switch_boot">Launch on boot</string>
     <string name="switch_boot_tip">Open the target app automatically when the device boots or wakes from standby.</string>
     <string name="switch_menu_lp">☰ Menu long-press opens this config screen</string>
@@ -80,7 +87,6 @@
     <!-- Loader animation, reachable as an easter egg via the info-dialog logo. -->
     <string name="loader_caption_loading">Loading custom launcher…</string>
     <string name="loader_caption_ready">Ready</string>
-    <string name="loader_preview_hint">Press ◀ Back or OK to close</string>
 
     <!-- Header info button -->
     <string name="info_button_glyph">ⓘ</string>

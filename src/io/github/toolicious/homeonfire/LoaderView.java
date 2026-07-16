@@ -112,6 +112,12 @@ public class LoaderView extends View {
     private boolean running = false;
     /** One-shot by default, matching every current caller; setLooping(true) restores the seamless loop. */
     private boolean loop = false;
+    /**
+     * Plain-black variant (Fire OS 7 "Loading cover: Black screen"): no motion, just a
+     * black screen with the loading caption centered and a discreet brand mark at the
+     * bottom. Selected via {@link #setBlackScreen}.
+     */
+    private boolean blackScreen = false;
     private long startNanos = 0L;
     private OnEndListener onEndListener;
     private boolean endNotified = false;
@@ -126,6 +132,9 @@ public class LoaderView extends View {
 
     private String captionLoading = "LOADING…";
     private String captionReady = "READY";
+
+    /** House + "Home on Fire" wordmark drawn on the black screen; loaded lazily and mutated so its alpha stays local. */
+    private android.graphics.drawable.Drawable wordmark;
 
     // Cached, design-space shaders (independent of view size).
     private RadialGradient glowShader;   // center breathing glow
@@ -165,6 +174,9 @@ public class LoaderView extends View {
     }
 
     public void setLooping(boolean l) { loop = l; }
+
+    /** Switches to the plain black-screen variant (no animation). Set before the view is shown. */
+    public void setBlackScreen(boolean b) { blackScreen = b; }
 
     /** Notified once when a one-shot (non-looping) run reaches its final hold frame. */
     public interface OnEndListener { void onEnd(); }
@@ -276,6 +288,10 @@ public class LoaderView extends View {
     // ── Frame ──────────────────────────────────────────────────────────────────
     @Override
     protected void onDraw(Canvas canvas) {
+        if (blackScreen) {
+            drawBlackScreen(canvas);
+            return; // static frame: no animation clock, no re-post
+        }
         ensureShaders();
         float t = currentTime();
 
@@ -296,6 +312,11 @@ public class LoaderView extends View {
         drawLoopFade(canvas, t);
 
         canvas.restore();
+
+        // Brand mark, shared with the black screen, drawn in raw view space (outside the
+        // stage transform) so it sits at the same spot regardless of the cover scaling.
+        // On the busy animation it matches the caption's 0.40 opacity so it stays subtle.
+        drawBrandMark(canvas, vw, vh, 0.40f);
 
         // Keep animating while looping; in one-shot mode stop re-posting once
         // the hold frame is reached so a static "Ready" frame doesn't spin the
@@ -464,6 +485,45 @@ public class LoaderView extends View {
         paint.setColor(withAlpha(0xFFFFFFFF, op));
         c.drawCircle(0f, 0f, 5.5f, paint);
         c.restore();
+    }
+
+    /**
+     * Plain-black loading screen: a solid black fill, the loading caption centered (same
+     * face as the animation's captions), and a discreet house-logo + app-name mark near
+     * the bottom so it stays recognizably ours. Static, so onDraw draws it once.
+     */
+    private void drawBlackScreen(Canvas c) {
+        c.drawColor(0xFF000000);
+        int vw = getWidth(), vh = getHeight();
+
+        // Match the animation caption exactly: 30f in the 1920x1080 design space, scaled
+        // to the view the same "cover" way, so both read at the identical on-screen size.
+        float s = Math.max(vw / W, vh / H);
+        capPaint.setTypeface(captionFace);
+        capPaint.setTextAlign(Paint.Align.CENTER);
+        capPaint.setLetterSpacing(0.16f);
+        capPaint.setColor(0xFFF0F0F0);
+        capPaint.setTextSize(30f * s);
+        Paint.FontMetrics fm = capPaint.getFontMetrics();
+        c.drawText(captionLoading, vw / 2f, vh / 2f - (fm.ascent + fm.descent) / 2f, capPaint);
+
+        drawBrandMark(c, vw, vh, 0.50f); // more present here, where it is the only mark
+    }
+
+    /** House + "Home on Fire" wordmark, centered near the bottom edge, kept subtle. */
+    private void drawBrandMark(Canvas c, int vw, int vh, float op) {
+        if (wordmark == null) {
+            android.graphics.drawable.Drawable d = getContext().getDrawable(R.drawable.ic_wordmark);
+            if (d != null) wordmark = d.mutate();
+        }
+        if (wordmark == null) return;
+        float h = Math.max(vh * 0.075f, 50f); // subtle but legible
+        float w = h * (1528f / 800f);         // ic_wordmark viewport aspect
+        int left = Math.round((vw - w) / 2f);
+        int bottom = Math.round(vh - Math.max(vh * 0.055f, 34f));
+        wordmark.setBounds(left, Math.round(bottom - h), Math.round(left + w), bottom);
+        wordmark.setAlpha((int) (op * 255f));
+        wordmark.draw(c);
     }
 
     // Loop seam: soft dip to black at the very end / start.

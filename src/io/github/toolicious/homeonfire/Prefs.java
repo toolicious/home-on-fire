@@ -45,6 +45,9 @@ public class Prefs {
     public static final int DEFAULT_MASK_HOLD = 700;
     public static final int DEFAULT_MASK_FADE = 100;
 
+    /** What the Fire OS 7 masking overlay shows: the loading animation, or a plain black screen. */
+    private static final String KEY_MASK_BLACK = "mask_black_screen";
+
     /**
      * Empty by default; the user is expected to pick a target via the
      * configuration screen before anything is launched. The hijack,
@@ -192,6 +195,19 @@ public class Prefs {
 
     public void setMaskFadeMs(int ms) {
         sp.edit().putInt(KEY_MASK_FADE, ms).apply();
+    }
+
+    /**
+     * When true, the Fire OS 7 masking overlay is a plain black screen with a loading
+     * message instead of the loading animation. Off (animation) by default. Only has an
+     * effect on Fire OS 6/7, where the overlay actually runs.
+     */
+    public boolean isMaskBlackScreen() {
+        return sp.getBoolean(KEY_MASK_BLACK, false);
+    }
+
+    public void setMaskBlackScreen(boolean black) {
+        sp.edit().putBoolean(KEY_MASK_BLACK, black).apply();
     }
 
     /** Restores all three overlay-timing values to their defaults. */

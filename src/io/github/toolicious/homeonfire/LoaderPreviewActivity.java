@@ -4,11 +4,9 @@ package io.github.toolicious.homeonfire;
 
 import android.app.Activity;
 import android.os.Bundle;
-import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.TextView;
 
 /**
  * Full-screen preview of {@link LoaderView}, reachable as a hidden easter egg by
@@ -17,6 +15,11 @@ import android.widget.TextView;
  * preview the fade. Back or OK closes it early; relaunch from the logo to replay.
  */
 public class LoaderPreviewActivity extends Activity {
+
+    /** Intent extra (boolean): preview the plain black screen instead of the animation. */
+    public static final String EXTRA_BLACK = "black";
+    /** How long the static black-screen preview holds before it auto-fades. */
+    private static final long BLACK_PREVIEW_MS = 3000L;
 
     private LoaderView loader;
 
@@ -30,39 +33,33 @@ public class LoaderPreviewActivity extends Activity {
         final Prefs prefs = new Prefs(this);
 
         final FrameLayout root = new FrameLayout(this);
+        final boolean black = getIntent() != null
+                && getIntent().getBooleanExtra(EXTRA_BLACK, false);
 
         loader = new LoaderView(this);
         loader.setCaptions(getString(R.string.loader_caption_loading),
                 getString(R.string.loader_caption_ready));
         loader.setLooping(false); // play once, then fade out
+        loader.setBlackScreen(black);
 
-        // Dim close hint, just above the animated progress bar at the bottom.
-        final TextView hint = new TextView(this);
-        hint.setText(R.string.loader_preview_hint);
-        hint.setTextSize(14);
-        hint.setTextColor(0x80FFFFFF);
-
-        // On end: fade the whole overlay (loader + hint) out uniformly over the
-        // configured fade, revealing the translucent screen behind, then close.
-        loader.setOnEndListener(new LoaderView.OnEndListener() {
-            @Override
-            public void onEnd() {
-                root.animate().alpha(0f).setDuration(prefs.getMaskFadeMs())
-                        .withEndAction(new Runnable() {
-                            @Override
-                            public void run() { finish(); }
-                        }).start();
-            }
-        });
+        // On end (or, for the static black screen, after a short beat) fade the whole
+        // overlay out over the configured fade, revealing the screen behind, then close.
+        if (black) {
+            // The black screen is static (no end event fires), so auto-fade after a
+            // short beat to mimic the launcher taking over; Back / OK closes it sooner.
+            root.postDelayed(new Runnable() {
+                @Override
+                public void run() { fadeOutAndClose(root, prefs.getMaskFadeMs()); }
+            }, BLACK_PREVIEW_MS);
+        } else {
+            loader.setOnEndListener(new LoaderView.OnEndListener() {
+                @Override
+                public void onEnd() { fadeOutAndClose(root, prefs.getMaskFadeMs()); }
+            });
+        }
 
         root.addView(loader, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-        FrameLayout.LayoutParams hintLp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        hintLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        hintLp.bottomMargin = dp(22);
-        root.addView(hint, hintLp);
 
         setContentView(root);
     }
@@ -70,13 +67,22 @@ public class LoaderPreviewActivity extends Activity {
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
-            finish();
+            // Only a fresh OK press closes the preview. When it was opened by a long-press
+            // on the cover box, the key is still held as this activity comes up, so its
+            // auto-repeat DOWNs (repeatCount > 0) arrive here; finishing on those would
+            // close it instantly (a flash then gone). Swallow them without closing.
+            if (event.getRepeatCount() == 0) finish();
             return true;
         }
         return super.onKeyDown(keyCode, event);
     }
 
-    private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    /** Fades the whole preview overlay out over {@code fadeMs}, then closes. */
+    private void fadeOutAndClose(final android.view.View overlay, long fadeMs) {
+        overlay.animate().alpha(0f).setDuration(fadeMs)
+                .withEndAction(new Runnable() {
+                    @Override
+                    public void run() { finish(); }
+                }).start();
     }
 }

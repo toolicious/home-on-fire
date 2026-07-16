@@ -24,7 +24,7 @@ on current Fire OS 8.x (as of May 2026), and on Fire OS 7
 > [!IMPORTANT]
 > **Fire OS 7 shows a brief loading animation when you press Home. Fire OS 8 does not.**
 >
-> On Fire OS 7, the system holds back any app opened by the Home button for up to 5 seconds (an "app-switch lock"). This delay cannot be removed without root, so Home on Fire covers it with a loading animation that fades into your launcher. In practice it is usually much shorter (often about a second) and clears the moment your launcher is ready. **Fire OS 8 has no such delay and shows no animation at all.**
+> On Fire OS 7, the system holds back any app opened by the Home button for up to 5 seconds (an "app-switch lock"). This delay cannot be removed without root, so Home on Fire covers it with a loading animation (or a plain black screen, your choice) that fades into your launcher. In practice it is usually much shorter (often about a second) and clears the moment your launcher is ready. **Fire OS 8 has no such delay and shows no animation at all.**
 >
 > **To get an instant launch with no animation, you have two options:**
 > - **Map a spare remote button** (in the app, under **Map custom buttons**). Bind a color, number or media key to your launcher. That shortcut never goes through Home, so it skips the delay and shows no animation. You can map a second button to jump to Amazon's home.

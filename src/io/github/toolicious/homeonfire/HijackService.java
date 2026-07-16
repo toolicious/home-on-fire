@@ -1502,6 +1502,7 @@ public class HijackService extends AccessibilityService {
             view.setCaptions(getString(R.string.loader_caption_loading),
                     getString(R.string.loader_caption_ready));
             view.setLooping(false); // one-shot: play once, hold on the "Ready" frame
+            view.setBlackScreen(prefs.isMaskBlackScreen()); // plain black instead of the animation
             windowManager.addView(view, maskLayoutParams());
             maskView = view;
             maskAttached = true;

@@ -56,6 +56,10 @@ public class MainActivity extends Activity {
 
     /** The map-custom-buttons switch-row (left half); pinned into the vertical focus chain. */
     private LinearLayout launchKeyRow;
+    /** The Replace-Home switch-row; kept so the Fire OS 7 loading-cover box can hang off it. */
+    private LinearLayout hijackRow;
+    /** Fire OS 7 only: the loading-cover choice box (Animation vs. black screen) beside Replace Home. */
+    private TextView coverBox;
     /** The two "map custom button" value boxes: one for the target launcher, one for Amazon home. */
     private TextView launcherBox, amazonBox;
     /** The box currently in learn mode (waiting for a key press), or null, plus its target pref. */
@@ -355,15 +359,7 @@ public class MainActivity extends Activity {
                         updateDependentSwitches();
                     }
                 });
-        hijackSwitch = makeSwitchRow(content,
-                badgeKeys(getString(R.string.switch_hijack)),
-                getString(isFos7OrOlder()
-                        ? R.string.switch_hijack_tip_fos7
-                        : R.string.switch_hijack_tip),
-                prefs.isHijackEnabled(),
-                prefToggle(new PrefSetter() {
-                    @Override public void set(boolean v) { prefs.setHijackEnabled(v); }
-                }));
+        addHomeRow(content);
         // The other two "replace a button" shortcuts sit right under Replace Home.
         // Apps first, then the custom key (whose tooltip is referenced from the
         // Apps tooltip as "the custom launch key below").
@@ -392,6 +388,158 @@ public class MainActivity extends Activity {
                     @Override public void set(boolean v) { prefs.setMenuLongPressLaunch(v); }
                 }));
         addVerboseRow(content);
+    }
+
+    /**
+     * Replace-Home row. A plain switch-row on every Fire OS version; on Fire OS 7 it also
+     * carries a right-hand choice box, in the same column as the map-custom-buttons boxes
+     * below, for what covers the screen during the ~5 s launch delay: the loading animation
+     * or a plain black screen with a loading message. Fire OS 8 has no delay and no overlay,
+     * so the box is Fire OS 7 only.
+     */
+    private void addHomeRow(LinearLayout content) {
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(16), dp(ROW_PAD_V), dp(16), dp(ROW_PAD_V));
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setFocusable(true);
+        row.setClickable(true);
+        row.setBackground(getDrawable(R.drawable.row_focus_bg));
+
+        final Switch sw = new Switch(this);
+        sw.setChecked(prefs.isHijackEnabled());
+        sw.setFocusable(false);
+        sw.setClickable(false);
+        sw.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean isChecked) {
+                if (suppressSwitchEvents) return;
+                prefs.setHijackEnabled(isChecked);
+                updateCoverBoxState(); // the cover choice only applies while the redirect runs
+            }
+        });
+        LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        swLp.rightMargin = dp(16);
+        row.addView(sw, swLp);
+
+        TextView tv = new TextView(this);
+        tv.setText(badgeKeys(getString(R.string.switch_hijack)));
+        tv.setTextSize(18);
+        tv.setTextColor(Colors.NEUTRAL);
+        LinearLayout.LayoutParams tvLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        row.addView(tv, tvLp);
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (row.isEnabled()) sw.toggle();
+            }
+        });
+        row.setOnKeyListener(new RightNavGuard(null));
+        attachTip(row, getString(isFos7OrOlder()
+                ? R.string.switch_hijack_tip_fos7 : R.string.switch_hijack_tip));
+
+        hijackSwitch = sw;
+        hijackRow = row;
+
+        if (isFos7OrOlder()) {
+            LinearLayout outer = new LinearLayout(this);
+            outer.setOrientation(LinearLayout.HORIZONTAL);
+            outer.setGravity(Gravity.CENTER_VERTICAL);
+            outer.addView(row, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            coverBox = addCoverBox(outer);
+            updateCoverBoxState(); // start grayed/unfocusable if the redirect is off
+            content.addView(outer);
+        } else {
+            content.addView(row);
+        }
+    }
+
+    /**
+     * Builds the "Loading cover: [Animation | Black screen]" choice box and appends it to
+     * {@code parent}. OK / click toggles between the two; the masking overlay reads the
+     * value on Fire OS 7. Styled like the map-custom-buttons value boxes.
+     */
+    private TextView addCoverBox(LinearLayout parent) {
+        TextView label = new TextView(this);
+        label.setText(R.string.mask_cover_label);
+        label.setTextSize(15);
+        label.setTextColor(Colors.NEUTRAL);
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelLp.leftMargin = dp(12);
+        labelLp.rightMargin = dp(6);
+        parent.addView(label, labelLp);
+
+        final TextView box = new TextView(this);
+        box.setText(coverBoxText());
+        box.setTextSize(16);
+        box.setTextColor(Colors.WHITE);
+        box.setGravity(Gravity.CENTER);
+        box.setMinWidth(dp(120));
+        box.setPadding(dp(12), dp(ROW_PAD_V), dp(12), dp(ROW_PAD_V));
+        box.setBackground(getDrawable(R.drawable.target_chip_bg));
+        box.setFocusable(true);
+        box.setClickable(true);
+        box.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                prefs.setMaskBlackScreen(!prefs.isMaskBlackScreen());
+                box.setText(coverBoxText());
+            }
+        });
+        box.setOnKeyListener(new RightNavGuard(new CoverBoxListener())); // rightmost; long-OK previews
+        box.setTag(label); // grayed together with the box when Replace Home is off
+        attachTip(box, getString(R.string.mask_cover_tip));
+        parent.addView(box);
+        return box;
+    }
+
+    /** Current label for the loading-cover box: "Animation" or "Black screen". */
+    private CharSequence coverBoxText() {
+        return getString(prefs.isMaskBlackScreen()
+                ? R.string.mask_cover_black : R.string.mask_cover_animation);
+    }
+
+    /**
+     * Key handling for the loading-cover box: short OK toggles the choice (via the box's
+     * OnClickListener); long OK plays a full-screen preview of the currently selected
+     * loading screen, so the choice can be checked without triggering a real Home redirect.
+     * Modelled on {@link PickerLongPressListener} (return false on the OK DOWN so the
+     * framework tracks the press for long-press + click; swallow the trailing click).
+     */
+    private class CoverBoxListener implements View.OnKeyListener {
+        private boolean longPressTriggered = false;
+
+        @Override
+        public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
+            boolean isOkKey = keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+                    || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+            if (!isOkKey) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                if (event.getRepeatCount() == 0) longPressTriggered = false;
+                if (event.isLongPress()) {
+                    longPressTriggered = true;
+                    previewLoadingScreen();
+                }
+                return false; // let the framework track the press (long-press + click)
+            }
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && longPressTriggered) {
+                longPressTriggered = false;
+                return true; // swallow the click so a long-press doesn't also toggle
+            }
+            return false;
+        }
+    }
+
+    /** Full-screen preview of the currently selected loading screen (animation or black). */
+    private void previewLoadingScreen() {
+        Intent i = new Intent(this, LoaderPreviewActivity.class);
+        i.putExtra(LoaderPreviewActivity.EXTRA_BLACK, prefs.isMaskBlackScreen());
+        startActivity(i);
     }
 
     /**
@@ -518,6 +666,7 @@ public class MainActivity extends Activity {
             }
         });
         box.setOnKeyListener(new RightNavGuard(new KeyBoxListener(box, pref)));
+        box.setTag(label); // grayed together with the box when the shortcut is off
         attachTip(box, getString(tipRes));
         parent.addView(box);
         return box;
@@ -531,22 +680,35 @@ public class MainActivity extends Activity {
     private void updateLaunchKeyBoxState() {
         boolean usable = accessSwitch.isChecked() && prefs.isLaunchKeyEnabled();
         if (!usable && learningBox != null) cancelLearning();
-        setBoxUsable(launcherBox, usable);
-        setBoxUsable(amazonBox, usable);
+        setBoxUsable(launcherBox, usable, launchKeyRow);
+        setBoxUsable(amazonBox, usable, launchKeyRow);
     }
 
-    /** Enables/grays one value box; if it loses focusability while focused, moves focus off it. */
-    private void setBoxUsable(TextView box, boolean usable) {
+    /**
+     * The Fire OS 7 loading-cover box is usable when the accessibility service is on AND
+     * Replace Home is enabled (the cover only ever shows during that redirect). No-op on
+     * Fire OS 8, where the box does not exist.
+     */
+    private void updateCoverBoxState() {
+        setBoxUsable(coverBox, accessSwitch.isChecked() && prefs.isHijackEnabled(), hijackRow);
+    }
+
+    /**
+     * Enables/grays one value box; if it loses focusability while focused, moves focus to
+     * {@code fallbackRow} so the screen never ends up with nothing selected.
+     */
+    private void setBoxUsable(TextView box, boolean usable, View fallbackRow) {
         if (box == null) return;
         boolean wasFocused = box.isFocused();
         box.setEnabled(usable);
         box.setFocusable(usable);
         box.setClickable(usable);
         box.setAlpha(usable ? 1f : 0.4f);
-        if (!usable && wasFocused && launchKeyEnabledSwitch != null) {
-            View row = (View) launchKeyEnabledSwitch.getParent();
-            if (row != null) row.requestFocus();
-        }
+        // Dim the sub-label ("Launcher:", "Amazon Home:", "Loading screen:") in step with
+        // the box; it's stashed on the box's tag so we don't need a field per label.
+        Object label = box.getTag();
+        if (label instanceof View) ((View) label).setAlpha(usable ? 1f : 0.4f);
+        if (!usable && wasFocused && fallbackRow != null) fallbackRow.requestFocus();
     }
 
     /**
@@ -952,6 +1114,12 @@ public class MainActivity extends Activity {
             if (appsRow != null) box.setNextFocusUpId(appsRow.getId());
             if (bootRow != null) box.setNextFocusDownId(bootRow.getId());
         }
+        // Fire OS 7 loading-cover box: on the Replace-Home row, between the accessibility
+        // row above and the Apps-redirect row below; reach it via RIGHT, leave via UP/DOWN.
+        if (coverBox != null) {
+            if (accessRow != null) coverBox.setNextFocusUpId(accessRow.getId());
+            if (appsRow != null) coverBox.setNextFocusDownId(appsRow.getId());
+        }
         if (logBtn != null && menuRow != null) {
             logBtn.setNextFocusUpId(menuRow.getId());
         }
@@ -1322,6 +1490,7 @@ public class MainActivity extends Activity {
         if (amazonBox != null && learningBox != amazonBox) {
             amazonBox.setText(keyFieldText(amazonPref()));
         }
+        if (coverBox != null) coverBox.setText(coverBoxText());
     }
 
     /**
@@ -1341,6 +1510,7 @@ public class MainActivity extends Activity {
         setRowEnabled(launchKeyEnabledSwitch, accessOn);
         // The value box is gated on both the service AND the shortcut toggle.
         updateLaunchKeyBoxState();
+        updateCoverBoxState();
         updateLogButtonVisibility();
         // The tuning section's only reveal/hide anchor is the verbose row, which is
         // unfocusable while the service is off; collapse the section so it cannot
