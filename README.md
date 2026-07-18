@@ -293,6 +293,9 @@ adb shell pm grant io.github.toolicious.homeonfire android.permission.WRITE_SECU
 
 One-shot grant, persists across reboots.
 
+> [!TIP]
+> Doing this from a phone instead of a PC? The apps that connect to the Fire TV and drop you into a shell prompt (not Termux) put you inside the device's own shell, so there is no `adb` command there. Run just the inner part, without the `adb shell` prefix: `pm grant io.github.toolicious.homeonfire android.permission.WRITE_SECURE_SETTINGS`
+
 #### 6. Launch the app
 
 Either open **Home on Fire** from the apps grid on the TV, or
