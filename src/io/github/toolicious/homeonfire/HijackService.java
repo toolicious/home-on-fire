@@ -502,11 +502,28 @@ public class HijackService extends AccessibilityService {
         String target = prefs.getTargetPackage();
         if (target == null || target.isEmpty()) return;
 
-        // Live window list trumps the tracked previousForegroundPkg:
-        // tracking can be stale when Fire OS resumes the target from
-        // the back stack without firing a fresh WSE.
+        // Which app is under the Quick-Settings panel?
+        //
+        // The live window list is authoritative when the platform exposes it,
+        // so try that first. Several Fire OS 8 builds return nothing useful
+        // here (findUnderlyingAppPkg == null), and then we fall back to the
+        // last tracked *current* foreground, NOT the previous one: the panel
+        // paints an android.* window, which the class-gated foreground tracking
+        // deliberately ignores (see onAccessibilityEvent), so the panel never
+        // advances the trackers. The app underneath is therefore still
+        // currentForegroundPkg. previousForegroundPkg points one app further
+        // back and, right after an app is opened from the target launcher,
+        // still holds the target, which made a long-press Home inside a
+        // third-party app read as "long-press Home in target" and bounce to
+        // Amazon home (issue #5). Reading current restores the pre-class-gate
+        // behavior. If a future device does track the panel as a real class,
+        // current would be the panel itself, so fall back to the previous
+        // foreground in that one case.
         String prev = findUnderlyingAppPkg();
-        if (prev == null) prev = previousForegroundPkg;
+        if (prev == null) {
+            prev = currentForegroundPkg;
+            if (QUICKSETTINGS_PKG.equals(prev)) prev = previousForegroundPkg;
+        }
 
         // A genuine tile click (e.g. the Sound & Display entry on the
         // Amazon home Settings tab opens an activity inside the
@@ -536,7 +553,8 @@ public class HijackService extends AccessibilityService {
 
         if (prefs.isVerboseLogging()) {
             Log.i(TAG, "QS long-press handler: prev=" + prev
-                    + " (tracked=" + previousForegroundPkg
+                    + " (current=" + currentForegroundPkg
+                    + " tracked=" + previousForegroundPkg
                     + ") target=" + target);
         }
 
