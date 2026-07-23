@@ -562,11 +562,18 @@ public class HijackService extends AccessibilityService {
             redirectToAmazonHome("Long-press Home in target");
             return;
         }
-        if (prev != null && prev.startsWith("com.amazon.")) {
+        // Only Amazon's own home shell (launcher, Settings, Quick-Settings, none
+        // of which expose a Leanback launcher entry) opens the target from here.
+        // Amazon content apps such as Prime Video (com.amazon.firebat) DO have a
+        // Leanback entry, so they are content apps like any other and left alone,
+        // matching the isLeanbackLaunchable split in handleAmazonHomeArrival.
+        // Without this the panel over Prime yanked the user to the launcher.
+        if (prev != null && prev.startsWith("com.amazon.") && !isLeanbackLaunchable(prev)) {
             launchTarget(target, "Long-press Home in Amazon area (prev=" + prev + ")");
         }
-        // No fallback for third-party apps: long-press Home there is
-        // deliberately NOT hijacked so the app keeps its own menu.
+        // No fallback for third-party apps (Amazon content apps included): a
+        // long-press Home there is deliberately NOT hijacked so the app keeps
+        // its own menu.
     }
 
     /**
