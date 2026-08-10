@@ -91,10 +91,36 @@ public class HijackService extends AccessibilityService {
     private static final String QUICKSETTINGS_PKG = "com.amazon.tv.quicksettings.ui";
 
     /**
-     * Amazon's Appstore, whose {@code AppsGridLauncherActivity} is what the
-     * remote's Apps button opens. We cannot see the Apps key itself (it is
-     * system-handled), so redirecting that button to the target is driven off
-     * this window appearing (see {@link #handleAppsGridArrival}).
+     * Fire OS 6/7 equivalent of the Quick-Settings panel: a long-press of Home opens the
+     * settings HUD overlay instead ({@code com.amazon.tv.quicksettings.ui} does not exist
+     * before Fire OS 8), which is why the long-press gestures never fired there (issue #7,
+     * originally reported in #3).
+     *
+     * Matched on the ACTIVITY, never on the package: {@code com.amazon.tv.settings.v2} also
+     * hosts the ordinary Settings screens, and treating those as a long-press would make
+     * every trip into Settings jump to the launcher. Verified on Fire OS 6.7.1.1 that the
+     * two are distinct: a long-press starts {@code .hud.HudActivity} (action
+     * {@code SHOW_HUD}), while entering Settings normally starts {@code .tv.*} activities
+     * ({@code .tv.device.DeviceActivity}, {@code .tv.preferences.PreferencesActivity}).
+     */
+    private static final String AMAZON_SETTINGS_PKG = "com.amazon.tv.settings.v2";
+    private static final String HUD_ACTIVITY_SUFFIX = "hud.HudActivity";
+
+    /** The Fire OS 6/7 long-press HUD overlay (not an ordinary Settings screen). */
+    private static boolean isHudPanel(String pkg, String cls) {
+        return AMAZON_SETTINGS_PKG.equals(pkg) && cls != null && cls.endsWith(HUD_ACTIVITY_SUFFIX);
+    }
+
+    /** The long-press panel on either generation: Quick Settings (FOS8) or the HUD (FOS6/7). */
+    private static boolean isLongPressPanel(String pkg, String cls) {
+        return QUICKSETTINGS_PKG.equals(pkg) || isHudPanel(pkg, cls);
+    }
+
+    /**
+     * Amazon's Appstore, whose {@code AppsGridLauncherActivity} is what the remote's
+     * Apps button opens. We cannot see the Apps key itself (it is system-handled), so a
+     * slot mapped to Apps is driven off this window appearing, matched via the
+     * {@link Prefs#APPS_WINDOW} sentinel in {@link #windowMatches}.
      */
     private static final String AMAZON_APPS_GRID = "com.amazon.venezia";
 
@@ -109,6 +135,28 @@ public class HijackService extends AccessibilityService {
      * / {@link #stopLearning}; the service and the Activity share one process.
      */
     private static volatile KeyLearnListener sLearnListener;
+
+    /**
+     * Callback the config screen registers to learn a branded-button window.
+     * Branded remote buttons (Apps, Live TV, Guide, ...) emit no keycode, so
+     * {@link KeyLearnListener} can't reach them; we capture the app window the
+     * button opens instead. Beta universal-redirect feature.
+     */
+    public interface WindowLearnListener {
+        void onWindowLearned(String pkg, String activity);
+    }
+
+    /** Non-null while the config screen waits for the user to press a branded button. */
+    private static volatile WindowLearnListener sWindowLearnListener;
+
+    /**
+     * Live service instance, so static callers (the config screen) can ask the service
+     * to bring the config activity back to the front after a learned app-button opened
+     * its app. The service always outlives the config Activity, and its startActivity is
+     * exempt from Android's background-activity-start limits while the a11y service is
+     * bound, so this succeeds even when a heavy app (e.g. Prime) destroyed the Activity.
+     */
+    private static volatile HijackService sInstance;
 
     /** How long we suppress our own hijack after a long-press redirect. */
     private static final long LONGPRESS_REDIRECT_BYPASS_MS = 5_000L;
@@ -130,6 +178,7 @@ public class HijackService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        sInstance = this;
         prefs = new Prefs(this);
         mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
@@ -408,6 +457,30 @@ public class HijackService extends AccessibilityService {
             currentForegroundCls = clsStr;
         }
 
+        // Learn mode (beta universal redirect): the config screen asked us to capture
+        // the next app window so the user can teach a branded button (Apps, Live TV, ...)
+        // that emits no keycode. Filter by PACKAGE, not class: some apps open with an
+        // android.* window class (Amazon's Apps grid is com.amazon.venezia showing an
+        // android.widget.FrameLayout), so a class filter would wrongly skip them. We only
+        // skip our own screen and pure framework/system decor packages.
+        if (sWindowLearnListener != null && pkgStr != null
+                && !pkgStr.equals(getPackageName())
+                && !isSystemDecorPkg(pkgStr)) {
+            final WindowLearnListener learn = sWindowLearnListener;
+            sWindowLearnListener = null;
+            // Suppress the auto-hijack for a moment: the branded app we just captured can
+            // collapse back to Amazon home right after (e.g. an app that fails to load),
+            // which would otherwise redirect us to the launcher instead of letting the
+            // config screen return to the front to show the result.
+            bypassUntil = System.currentTimeMillis() + LONGPRESS_REDIRECT_BYPASS_MS;
+            final String learnedPkg = pkgStr;
+            final String learnedCls = clsStr;
+            mainHandler.post(new Runnable() {
+                @Override public void run() { learn.onWindowLearned(learnedPkg, learnedCls); }
+            });
+            return;
+        }
+
         // Drive the masking-overlay teardown from the target's window events. We wait
         // for the target's real content window (an app-specific class) rather than the
         // first transitional one, so the mask is not lifted before the launcher has
@@ -423,8 +496,6 @@ public class HijackService extends AccessibilityService {
                 && AMAZON_LAUNCHER_HOME_ACTIVITY.equals(cls.toString());
         onAmazonHomeActivity = isAmazonHome;
         boolean inAmazonLauncher = AMAZON_LAUNCHER.equals(pkgStr);
-        boolean isAppsGrid = AMAZON_APPS_GRID.equals(pkgStr) && cls != null
-                && cls.toString().endsWith("AppsGridLauncherActivity");
 
         if (prefs.isVerboseLogging()) {
             Log.i(TAG, "verbose win pkg=" + pkg + " cls=" + cls
@@ -441,13 +512,28 @@ public class HijackService extends AccessibilityService {
             tryCaptureFromCurrentFocus();
         }
 
-        if (QUICKSETTINGS_PKG.equals(pkgStr)) {
+        if (isLongPressPanel(pkgStr, clsStr)) {
             handleQuickSettingsLongPress();
             return;
         }
-        if (isAppsGrid) {
-            handleAppsGridArrival();
-            return;
+        if (pkgStr != null && clsStr != null) {
+            boolean mapOn = prefs.isLaunchKeyEnabled();
+            String launchWin = prefs.getLaunchWindow();
+            boolean matchLaunch = windowMatches(pkgStr, clsStr, launchWin);
+            boolean matchAmazon = !matchLaunch && windowMatches(pkgStr, clsStr, prefs.getAmazonWindow());
+            if ((matchLaunch || matchAmazon) && prefs.isVerboseLogging()) {
+                Log.i(TAG, "window-match pkg=" + pkgStr + " cls=" + clsStr
+                        + " mapEnabled=" + mapOn + " launch=" + matchLaunch
+                        + " amazon=" + matchAmazon + " launchWin=" + launchWin);
+            }
+            if (mapOn && matchLaunch) {
+                handleWindowLaunch(pkgStr);
+                return;
+            }
+            if (mapOn && matchAmazon) {
+                handleWindowAmazon();
+                return;
+            }
         }
         if (isAmazonHome) {
             handleAmazonHomeArrival();
@@ -475,7 +561,7 @@ public class HijackService extends AccessibilityService {
                     || "android.view.ViewGroup".equals(cls.toString())
                     || "android.widget.LinearLayout".equals(cls.toString()));
         if (!inAmazonLauncher
-                && !QUICKSETTINGS_PKG.equals(pkgStr)
+                && !isLongPressPanel(pkgStr, cls == null ? null : cls.toString())
                 && !isTransientContainerWse) {
             pendingHomeTabCapture = false;
         }
@@ -522,7 +608,14 @@ public class HijackService extends AccessibilityService {
         String prev = findUnderlyingAppPkg();
         if (prev == null) {
             prev = currentForegroundPkg;
-            if (QUICKSETTINGS_PKG.equals(prev)) prev = previousForegroundPkg;
+            // Unlike the Fire OS 8 panel (an untracked android.* window), the Fire OS 6/7
+            // HUD has a real activity class and therefore DOES advance the foreground
+            // tracker, so "current" is the panel itself; step back one in that case. The
+            // class check keeps genuine Settings screens (.tv.*) out of this fallback.
+            if (QUICKSETTINGS_PKG.equals(prev)
+                    || isHudPanel(currentForegroundPkg, currentForegroundCls)) {
+                prev = previousForegroundPkg;
+            }
         }
 
         // A genuine tile click (e.g. the Sound & Display entry on the
@@ -635,24 +728,87 @@ public class HijackService extends AccessibilityService {
         launchTarget(target, "Redirected Home (from " + prev + ")");
     }
 
+    /** Framework/system packages whose windows are transient decor, never a learn target. */
+    private boolean isSystemDecorPkg(String pkg) {
+        return pkg.equals("android") || pkg.startsWith("com.android.");
+    }
+
     /**
-     * The remote's Apps button opens Amazon's Apps grid; we cannot see that key,
-     * so we react to the grid window instead and, if enabled, redirect to the
-     * target. Always redirects, even when the launcher was already in front,
-     * because the grid always appears first and skipping the already-home case
-     * would strand the user on the grid with no way back via Apps. No mask: this
-     * never arms the app-switch lock, so it is instant apart from the brief grid
-     * flash (which is unavoidable, since the system opens the grid before we can
-     * react).
+     * True if the current foreground package satisfies a slot's window binding. Matched
+     * by PACKAGE, not activity: opening an app produces several activities (e.g. Prime's
+     * DeepLinkRouting then Landing, or Amazon's Apps grid showing a bare FrameLayout),
+     * so the exact activity seen at learn time may not be the one that appears on a later
+     * press. The {@link Prefs#APPS_WINDOW} sentinel is simply the venezia package. The
+     * startsWith clause keeps any legacy "package/activity" bindings working.
      */
-    private void handleAppsGridArrival() {
-        if (!prefs.isAppsButtonRedirect()) return;
+    private boolean windowMatches(String pkgStr, String clsStr, String binding) {
+        if (binding == null || binding.isEmpty() || pkgStr == null) return false;
+        if (!(binding.equals(pkgStr) || binding.startsWith(pkgStr + "/"))) return false;
+        // For the Apps binding (whole venezia package) don't fire on Amazon Appstore
+        // product / deeplink pages, which is what an UNINSTALLED app's button opens
+        // (e.g. pressing Netflix with Netflix not installed). Only the Apps grid should
+        // redirect. The grid's window class is AppsGridLauncherActivity or a bare
+        // android.widget.FrameLayout, neither of which is a product page.
+        if (AMAZON_APPS_GRID.equals(pkgStr) && isAppstoreProductPage(clsStr)) return false;
+        return true;
+    }
+
+    /** Amazon Appstore product / install / deeplink pages (not the Apps grid). */
+    static boolean isAppstoreProductPage(String cls) {
+        if (cls == null) return false;
+        return cls.contains("Details") || cls.contains("AppLaunch")
+                || cls.contains("UriMatch") || cls.contains("deeplink") || cls.contains(".pdi.");
+    }
+
+    /**
+     * A "Map custom buttons" slot bound to an app window (Apps, Live TV, Guide, ...)
+     * instead of a keycode: the branded button opened its app, so we redirect to the
+     * target launcher. Instant apart from the brief window flash that is unavoidable,
+     * since the system opens the branded app before we can react. No mask (this path
+     * never arms the app-switch lock).
+     */
+    private void handleWindowLaunch(final String brandedPkg) {
         String target = prefs.getTargetPackage();
-        if (target == null || target.isEmpty() || target.equals(getPackageName())) return;
+        if (target == null || target.isEmpty() || target.equals(getPackageName())) {
+            if (prefs.isVerboseLogging()) Log.i(TAG, "windowLaunch skip: no/invalid target");
+            return;
+        }
+        // Deliberately NOT gated by bypassUntil: a mapped button is an explicit user
+        // action and must redirect even right after an escape-to-Amazon-home (which sets
+        // the bypass to hold back the AUTO hijack, not explicit presses). The debounce
+        // only dedups the several window events a single press emits.
         long now = System.currentTimeMillis();
-        if (now < bypassUntil) return;
+        if (now - lastHijackAt < HIJACK_DEBOUNCE_MS) {
+            if (prefs.isVerboseLogging()) {
+                Log.i(TAG, "windowLaunch skip: debounce " + (now - lastHijackAt) + "ms since last");
+            }
+            return;
+        }
+        launchTarget(target, "Redirect from mapped app button", false);
+        // Some branded apps keep launching activities that re-cover the target right
+        // after (e.g. Prime: DeepLinkRouting then Landing). Re-assert the target ONLY if
+        // that same branded app is what came back to the front, so we win the launch-chain
+        // race without yanking the user back if they deliberately navigated elsewhere in
+        // the meantime (or if the redirect was already clean and the target is up).
+        if (mainHandler != null && brandedPkg != null) {
+            final String t = target;
+            final Runnable reassert = new Runnable() {
+                @Override public void run() {
+                    if (brandedPkg.equals(currentForegroundPkg)) {
+                        launchTarget(t, "Redirect re-assert", false);
+                    }
+                }
+            };
+            mainHandler.postDelayed(reassert, 700);
+            mainHandler.postDelayed(reassert, 1500);
+        }
+    }
+
+    /** As {@link #handleWindowLaunch} but the slot's action is "go to Amazon home". */
+    private void handleWindowAmazon() {
+        long now = System.currentTimeMillis();
         if (now - lastHijackAt < HIJACK_DEBOUNCE_MS) return;
-        launchTarget(target, "Redirect from Apps grid", false);
+        redirectToAmazonHome("Mapped app button to Amazon home");
     }
 
     /**
@@ -980,7 +1136,11 @@ public class HijackService extends AccessibilityService {
                     CharSequence pkg = root.getPackageName();
                     if (pkg == null) continue;
                     String pkgStr = pkg.toString();
-                    if (QUICKSETTINGS_PKG.equals(pkgStr)) continue;
+                    // Skip the long-press panel itself; we want the app underneath it.
+                    CharSequence rootCls = root.getClassName();
+                    if (isLongPressPanel(pkgStr, rootCls == null ? null : rootCls.toString())) {
+                        continue;
+                    }
                     return pkgStr;
                 } finally {
                     root.recycle();
@@ -1256,6 +1416,16 @@ public class HijackService extends AccessibilityService {
         sLearnListener = null;
     }
 
+    /** Config screen: capture the next foreground app window (a branded button press). */
+    public static void startWindowLearning(WindowLearnListener listener) {
+        sWindowLearnListener = listener;
+    }
+
+    /** Config screen: stop waiting for a branded-button window (on pause or cancel). */
+    public static void stopWindowLearning() {
+        sWindowLearnListener = null;
+    }
+
     /**
      * Sanity check applied to a candidate Home-tab capture: the node
      * has to look like a small, roughly-square icon button rather
@@ -1337,7 +1507,30 @@ public class HijackService extends AccessibilityService {
             }
             screenOnReceiver = null;
         }
+        if (sInstance == this) sInstance = null;
         return super.onUnbind(intent);
+    }
+
+    /**
+     * Brings the config activity back to the front after a learned app-button opened its
+     * app. Called by the config screen once it has captured a window. Runs from the
+     * service (which outlives the Activity and is BAL-exempt while bound), and fires
+     * twice with a delay so it wins against the app's own multi-activity launch chain
+     * (e.g. Prime's DeepLinkRouting then Landing) that would otherwise re-cover us.
+     */
+    public static void bringConfigToFrontDelayed() {
+        final HijackService svc = sInstance;
+        if (svc == null || svc.mainHandler == null) return;
+        final Runnable bring = new Runnable() {
+            @Override public void run() {
+                try {
+                    svc.startActivity(new Intent(svc, MainActivity.class).addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+                } catch (Exception ignored) { /* activity gone; nothing to do */ }
+            }
+        };
+        svc.mainHandler.postDelayed(bring, 700);
+        svc.mainHandler.postDelayed(bring, 1500);
     }
 
     /** Opens this app's configuration activity. Used by the Menu long-press shortcut. */

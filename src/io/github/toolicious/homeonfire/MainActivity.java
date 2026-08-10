@@ -52,7 +52,7 @@ public class MainActivity extends Activity {
     /** Round launch button on the right of the target row. */
     private TextView launchBtn;
     private Switch accessSwitch, hijackSwitch, bootSwitch, verboseSwitch, menuLpSwitch,
-            appsRedirectSwitch, launchKeyEnabledSwitch;
+            launchKeyEnabledSwitch;
 
     /** The map-custom-buttons switch-row (left half); pinned into the vertical focus chain. */
     private LinearLayout launchKeyRow;
@@ -62,9 +62,45 @@ public class MainActivity extends Activity {
     private TextView coverBox;
     /** The two "map custom button" value boxes: one for the target launcher, one for Amazon home. */
     private TextView launcherBox, amazonBox;
-    /** The box currently in learn mode (waiting for a key press), or null, plus its target pref. */
+    /**
+     * The box currently in learn mode, or null. While learning we listen for BOTH a
+     * keycode (the button sends a key) and an app window (the button opens an Amazon
+     * app), and bind whichever the pressed button produces. These hold that box's
+     * two prefs so either signal can be stored.
+     */
     private TextView learningBox;
-    private IntPref learningPref;
+    private IntPref learningKeyPref;
+    private StrPref learningWinPref;
+
+    /**
+     * An app window captured mid-learn while our config was backgrounded (the app the
+     * button opened is now foreground). Finished in onResume once the service has pulled
+     * the config screen back to the front. Static and slot-based so it survives this
+     * Activity being destroyed by a heavy app (e.g. Prime) and recreated.
+     */
+    private static int sPendingSlot = -1;          // SLOT_LAUNCHER / SLOT_AMAZON, or -1
+    private static String sPendingWindow;          // sentinel or "pkg/activity", or null
+    private static final int SLOT_LAUNCHER = 0;
+    private static final int SLOT_AMAZON = 1;
+
+    /**
+     * Shell / navigation surfaces that must never be captured as a mapped button
+     * during learn: Amazon home, the long-press side panel (Fire OS 8 Quick Settings),
+     * and Settings / the Fire OS 6-7 long-press HUD. The target launcher and our own
+     * screen are added dynamically in {@link #isIgnoredLearnWindow}. Seeing any of these
+     * mid-learn means the user bailed (e.g. long-pressed Home), so we cancel, not bind.
+     */
+    private static final String[] LEARN_IGNORE_PKGS = {
+            "com.amazon.tv.launcher",         // Amazon home shell
+            "com.amazon.tv.quicksettings.ui", // long-press side panel (Fire OS 8)
+            "com.amazon.tv.settings.v2",      // Settings and the Fire OS 6/7 long-press HUD
+    };
+
+    /** Amazon's Appstore package; its Apps-grid window is what the ⊞ Apps button opens. */
+    private static final String APPS_GRID_PKG = "com.amazon.venezia";
+
+    /** Amazon's Live TV app, what the remote's Live TV button opens. */
+    private static final String LIVETV_PKG = "com.amazon.tv.livetv";
 
     /** Vertical padding inside every settings row; kept small so more rows fit one screen. */
     private static final int ROW_PAD_V = 8;
@@ -360,18 +396,9 @@ public class MainActivity extends Activity {
                     }
                 });
         addHomeRow(content);
-        // The other two "replace a button" shortcuts sit right under Replace Home.
-        // Apps first, then the custom key (whose tooltip is referenced from the
-        // Apps tooltip as "the custom launch key below").
-        appsRedirectSwitch = makeSwitchRow(content,
-                badgeKeys(getString(R.string.switch_apps_redirect)),
-                getString(isFos7OrOlder()
-                        ? R.string.switch_apps_redirect_tip_fos7
-                        : R.string.switch_apps_redirect_tip),
-                prefs.isAppsButtonRedirect(),
-                prefToggle(new PrefSetter() {
-                    @Override public void set(boolean v) { prefs.setAppsButtonRedirect(v); }
-                }));
+        // The custom-button mapping sits right under Replace Home. It also covers
+        // app-buttons like ⊞ Apps and Live TV (learned as screen redirects), which
+        // used to be a separate "Replace Apps button" switch.
         addLaunchKeyRow(content);
         bootSwitch = makeSwitchRow(content,
                 getString(R.string.switch_boot),
@@ -609,9 +636,11 @@ public class MainActivity extends Activity {
         launchKeyEnabledSwitch = sw;
         launchKeyRow = row;
         launcherBox = addKeyBox(outer, getString(R.string.launch_key_launcher_label),
-                launcherPref(), dp(12), R.string.launch_key_launcher_box_tip);
+                launcherPref(), launcherWinPref(), SLOT_LAUNCHER, dp(12),
+                R.string.launch_key_launcher_box_tip);
         amazonBox = addKeyBox(outer, getString(R.string.launch_key_amazon_label),
-                amazonPref(), dp(18), R.string.launch_key_amazon_box_tip);
+                amazonPref(), amazonWinPref(), SLOT_AMAZON, dp(18),
+                R.string.launch_key_amazon_box_tip);
 
         updateLaunchKeyBoxState(); // start grayed/unfocusable if the shortcut is off
         content.addView(outer);
@@ -633,12 +662,29 @@ public class MainActivity extends Activity {
         };
     }
 
+    /** StrPref bridge for the target-launcher window trigger. */
+    private StrPref launcherWinPref() {
+        return new StrPref() {
+            @Override public String get() { return prefs.getLaunchWindow(); }
+            @Override public void set(String v) { prefs.setLaunchWindow(v); }
+        };
+    }
+
+    /** StrPref bridge for the Amazon-home window trigger. */
+    private StrPref amazonWinPref() {
+        return new StrPref() {
+            @Override public String get() { return prefs.getAmazonWindow(); }
+            @Override public void set(String v) { prefs.setAmazonWindow(v); }
+        };
+    }
+
     /**
      * Builds one "SubLabel [box]" mapping control and appends it to {@code parent}.
-     * OK on the box learns a key (via the service); a long OK resets it to None.
+     * A slot can be bound to a keycode OR an app window; OK on the box learns
+     * whichever the pressed button produces, a long OK resets it to None.
      */
-    private TextView addKeyBox(LinearLayout parent, String subLabel, final IntPref pref,
-                               int leftMargin, int tipRes) {
+    private TextView addKeyBox(LinearLayout parent, String subLabel, final IntPref keyPref,
+                               final StrPref winPref, final int slot, int leftMargin, int tipRes) {
         TextView label = new TextView(this);
         label.setText(subLabel);
         label.setTextSize(15);
@@ -650,7 +696,7 @@ public class MainActivity extends Activity {
         parent.addView(label, labelLp);
 
         final TextView box = new TextView(this);
-        box.setText(keyFieldText(pref));
+        box.setText(boxText(keyPref, winPref));
         box.setTextSize(16);
         box.setTextColor(Colors.WHITE);
         box.setGravity(Gravity.CENTER);
@@ -662,10 +708,10 @@ public class MainActivity extends Activity {
         box.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (learningBox == null) startLearning(box, pref); // OK (re)assigns
+                if (learningBox == null) startLearning(box, keyPref, winPref, slot); // OK (re)assigns
             }
         });
-        box.setOnKeyListener(new RightNavGuard(new KeyBoxListener(box, pref)));
+        box.setOnKeyListener(new RightNavGuard(new KeyBoxListener(box, keyPref, winPref)));
         box.setTag(label); // grayed together with the box when the shortcut is off
         attachTip(box, getString(tipRes));
         parent.addView(box);
@@ -723,12 +769,14 @@ public class MainActivity extends Activity {
      */
     private class KeyBoxListener implements View.OnKeyListener {
         private final TextView box;
-        private final IntPref pref;
+        private final IntPref keyPref;
+        private final StrPref winPref;
         private boolean longPressTriggered = false;
 
-        KeyBoxListener(TextView box, IntPref pref) {
+        KeyBoxListener(TextView box, IntPref keyPref, StrPref winPref) {
             this.box = box;
-            this.pref = pref;
+            this.keyPref = keyPref;
+            this.winPref = winPref;
         }
 
         @Override
@@ -745,7 +793,7 @@ public class MainActivity extends Activity {
                 if (event.getRepeatCount() == 0) longPressTriggered = false;
                 if (event.isLongPress()) {
                     longPressTriggered = true;
-                    resetKey(box, pref);
+                    resetKey(box, keyPref, winPref);
                 }
                 return false; // let the framework track the press (long-press + click)
             }
@@ -757,47 +805,201 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Hold OK on a box: clear just that mapping back to None (the toggle is left alone). */
-    private void resetKey(TextView box, IntPref pref) {
-        pref.set(Prefs.DEFAULT_LAUNCH_KEYCODE);
-        box.setText(keyFieldText(pref));
+    /** Hold OK on a box: clear both bindings for that slot back to None. */
+    private void resetKey(TextView box, IntPref keyPref, StrPref winPref) {
+        keyPref.set(Prefs.DEFAULT_LAUNCH_KEYCODE);
+        winPref.set(Prefs.NO_WINDOW);
+        box.setText(boxText(keyPref, winPref));
         Toast.makeText(this, getString(R.string.launch_key_cleared), Toast.LENGTH_SHORT).show();
     }
 
-    /** Enters learn mode for one box: the service captures the next assignable button. */
-    private void startLearning(final TextView box, final IntPref pref) {
+    /**
+     * Enters learn mode for one box. We arm BOTH signals and bind whichever the pressed
+     * button produces: an assignable keycode (button sends a key, binds in place) or the
+     * app window a branded button (Apps, Live TV, ...) opens. The latter backgrounds us
+     * (the app opened), so it finishes in {@link #processPendingLearn} once we're front.
+     */
+    private void startLearning(final TextView box, final IntPref keyPref, final StrPref winPref,
+                               final int slot) {
         learningBox = box;
-        learningPref = pref;
+        learningKeyPref = keyPref;
+        learningWinPref = winPref;
         box.setText(R.string.launch_key_learning);
+
         HijackService.startLearning(new HijackService.KeyLearnListener() {
             @Override
             public void onKeyLearned(int keyCode) {
-                // Posted on the main thread by the service.
+                // Posted on the main thread by the service. The button sent a key; the
+                // config screen stayed in front, so bind in place.
+                HijackService.stopWindowLearning();
                 learningBox = null;
-                learningPref = null;
-                pref.set(keyCode);
-                box.setText(keyFieldText(pref));
+                learningKeyPref = null;
+                learningWinPref = null;
+                keyPref.set(keyCode);
+                winPref.set(Prefs.NO_WINDOW); // a slot is key OR window, never both
+                box.setText(boxText(keyPref, winPref));
+            }
+        });
+
+        HijackService.startWindowLearning(new HijackService.WindowLearnListener() {
+            @Override
+            public void onWindowLearned(String pkg, String activity) {
+                // Posted on the main thread by the service. The button opened an app,
+                // which may have backgrounded or even destroyed this screen. So we stash
+                // the result statically and let the SERVICE pull us back to the front
+                // (it outlives the Activity); the binding is finished in onResume.
+                HijackService.stopLearning();
+                learningBox = null;
+                learningKeyPref = null;
+                learningWinPref = null;
+                // Shell / navigation surfaces (Amazon home, the long-press side panel,
+                // Settings), the target launcher and our own screen are never valid
+                // results: they mean the user bailed. Ignore, don't bind.
+                if (isIgnoredLearnWindow(pkg)) {
+                    if (box != null) box.setText(boxText(keyPref, winPref));
+                    return;
+                }
+                // An uninstalled app's button only opens the Amazon Appstore product
+                // page (e.g. Netflix when Netflix isn't installed), so there is nothing
+                // app-specific to bind. Tell the user and return to the config screen.
+                if (pkg.equals(APPS_GRID_PKG) && HijackService.isAppstoreProductPage(activity)) {
+                    Toast.makeText(getApplicationContext(),
+                            R.string.map_app_not_installed, Toast.LENGTH_LONG).show();
+                    HijackService.bringConfigToFrontDelayed();
+                    return;
+                }
+                sPendingSlot = slot;
+                // Store the PACKAGE (matched package-level at runtime, since an app's
+                // launch spans several activities). For the Apps grid the package IS the
+                // APPS_WINDOW sentinel, so no special case is needed.
+                sPendingWindow = pkg;
+                HijackService.bringConfigToFrontDelayed();
             }
         });
     }
 
-    /** Leaves learn mode without binding anything (Back, focus loss, or toggle-off). */
+    /**
+     * True if a window seen during learn is a shell / navigation surface (Amazon home,
+     * the long-press side panel, Settings), the target launcher, or our own screen,
+     * none of which are valid mapped-button results.
+     */
+    private boolean isIgnoredLearnWindow(String pkg) {
+        if (pkg == null || pkg.equals(getPackageName())) return true;
+        String target = prefs.getTargetPackage();
+        if (target != null && !target.isEmpty() && pkg.equals(target)) return true;
+        for (String p : LEARN_IGNORE_PKGS) {
+            if (pkg.equals(p)) return true;
+        }
+        return false;
+    }
+
+    /** Leaves learn mode without binding anything (Back, toggle-off, or destroy). */
     private void cancelLearning() {
         if (learningBox == null) return;
         TextView box = learningBox;
-        IntPref pref = learningPref;
+        IntPref keyPref = learningKeyPref;
+        StrPref winPref = learningWinPref;
         learningBox = null;
-        learningPref = null;
+        learningKeyPref = null;
+        learningWinPref = null;
         HijackService.stopLearning();
-        if (box != null && pref != null) box.setText(keyFieldText(pref));
+        HijackService.stopWindowLearning();
+        if (box != null && keyPref != null && winPref != null) {
+            box.setText(boxText(keyPref, winPref));
+        }
     }
 
-    /** Text for a value box: the bound key's friendly name (icon + word for media), or "None". */
-    private CharSequence keyFieldText(IntPref pref) {
-        int kc = pref.get();
+    /**
+     * Finishes a window binding captured while we were backgrounded (see
+     * {@link #startLearning}). A real content app (Netflix, Prime, ...) would become
+     * unreachable everywhere if mapped, so confirm first; shell surfaces (Apps, Live
+     * TV, ...) bind straight away. Called from {@link #onResume}.
+     */
+    private void processPendingLearn() {
+        if (sPendingSlot < 0 || sPendingWindow == null) return;
+        final int slot = sPendingSlot;
+        final String win = sPendingWindow;
+        sPendingSlot = -1;
+        sPendingWindow = null;
+        final TextView box = (slot == SLOT_LAUNCHER) ? launcherBox : amazonBox;
+        final IntPref keyPref = (slot == SLOT_LAUNCHER) ? launcherPref() : amazonPref();
+        final StrPref winPref = (slot == SLOT_LAUNCHER) ? launcherWinPref() : amazonWinPref();
+        if (box == null) return;
+
+        final String pkg = win.contains("/") ? win.substring(0, win.indexOf('/')) : win;
+        // The Apps grid is a shell surface, not content, so it skips the warning below.
+        // Matched by package: its window class varies (often a bare FrameLayout).
+        boolean isAppsGrid = pkg.equals(APPS_GRID_PKG);
+        boolean isContentApp = !isAppsGrid
+                && getPackageManager().getLeanbackLaunchIntentForPackage(pkg) != null;
+        if (isContentApp) {
+            // Native dialog, but clearly ours: our logo plus a two-line title that
+            // starts with the app name, so it can't be mistaken for a system prompt.
+            new android.app.AlertDialog.Builder(this)
+                    .setIcon(R.drawable.ic_logo)
+                    .setTitle(getString(R.string.app_name) + ":\n"
+                            + getString(R.string.redirect_learn_warn_title))
+                    .setMessage(getString(R.string.redirect_learn_warn_msg, appLabel(pkg)))
+                    .setPositiveButton(R.string.redirect_learn_warn_add,
+                            new android.content.DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(android.content.DialogInterface d, int which) {
+                            bindWindow(box, keyPref, winPref, win, pkg);
+                        }
+                    })
+                    .setNegativeButton(R.string.redirect_learn_warn_cancel, null)
+                    .show();
+        } else {
+            bindWindow(box, keyPref, winPref, win, pkg);
+        }
+    }
+
+    /** Commits a window binding to a slot (clearing its keycode) and refreshes the box. */
+    private void bindWindow(TextView box, IntPref keyPref, StrPref winPref, String win, String pkg) {
+        winPref.set(win);                          // win is the package (Apps = venezia sentinel)
+        keyPref.set(Prefs.DEFAULT_LAUNCH_KEYCODE); // a slot is key OR window, never both
+        box.setText(boxText(keyPref, winPref));
+        CharSequence what = win.equals(Prefs.APPS_WINDOW) ? "Apps" : appLabel(pkg);
+        Toast.makeText(this, getString(R.string.redirect_learn_added, what),
+                Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Text for a value box: an app name with the ⧉ "screen" glyph if the slot is bound
+     * to an app window, else the bound key's friendly name, else "None".
+     */
+    private CharSequence boxText(IntPref keyPref, StrPref winPref) {
+        String win = winPref.get();
+        if (win != null && !win.isEmpty()) {
+            // Inline icon + word, the same box style the media keys use (no keycap border,
+            // which would collapse the box). The two buttons we ship an icon for render it
+            // here as well, so a given button looks the same in the tooltip and in the box.
+            if (win.equals(Prefs.APPS_WINDOW)) {
+                return KeyBadges.iconLabel(this, R.drawable.ic_key_apps, "Apps");
+            }
+            if (win.equals(LIVETV_PKG)) {
+                return KeyBadges.iconLabel(this, R.drawable.ic_key_livetv,
+                        getString(R.string.key_live_tv));
+            }
+            // Everything else stays generic on purpose: one neutral marker plus the app
+            // name, rather than pulling each app's own icon.
+            String pkg = win.contains("/") ? win.substring(0, win.indexOf('/')) : win;
+            return "⧉ " + appLabel(pkg);
+        }
+        int kc = keyPref.get();
         return kc == Prefs.DEFAULT_LAUNCH_KEYCODE
                 ? getString(R.string.launch_key_none)
                 : keycodeLabel(kc);
+    }
+
+    /** Best-effort human name for a package, falling back to the package id. */
+    private CharSequence appLabel(String pkg) {
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            return pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0));
+        } catch (Exception e) {
+            return pkg;
+        }
     }
 
     /**
@@ -852,6 +1054,7 @@ public class MainActivity extends Activity {
      * the target row (focusable area on the left, round action button on
      * the right) so d-pad focus stays predictable.
      */
+
     private void addVerboseRow(LinearLayout content) {
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.HORIZONTAL);
@@ -985,6 +1188,12 @@ public class MainActivity extends Activity {
         void set(int value);
     }
 
+    /** Get/set bridge for a string-valued pref (a slot's app-window binding). */
+    private interface StrPref {
+        String get();
+        void set(String value);
+    }
+
     /**
      * Beta overlay-timing section: a heading plus three d-pad steppers (start cover
      * delay, end hold, fade) and a reset row, placed below the switch rows. Shown on
@@ -1085,24 +1294,23 @@ public class MainActivity extends Activity {
      */
     private void wireVerticalNav() {
         View accessRow = rowOf(accessSwitch);
-        View appsRow = rowOf(appsRedirectSwitch);
         View bootRow = rowOf(bootSwitch);
         View menuRow = rowOf(menuLpSwitch);
         ensureId(accessRow);
-        ensureId(appsRow);
         ensureId(bootRow);
         ensureId(menuRow);
+        ensureId(hijackRow);
         ensureId(launchKeyRow);
         if (launchBtn != null && accessRow != null) {
             launchBtn.setNextFocusDownId(accessRow.getId());
         }
         // Pin the map-custom-buttons switch-row into the row chain so d-pad UP/DOWN
         // never lands on (or skips past) the two value boxes beside it; the boxes
-        // are reached only via RIGHT.
+        // are reached only via RIGHT. The row directly above it is Replace Home.
         if (launchKeyRow != null) {
-            if (appsRow != null) {
-                appsRow.setNextFocusDownId(launchKeyRow.getId());
-                launchKeyRow.setNextFocusUpId(appsRow.getId());
+            if (hijackRow != null) {
+                hijackRow.setNextFocusDownId(launchKeyRow.getId());
+                launchKeyRow.setNextFocusUpId(hijackRow.getId());
             }
             if (bootRow != null) {
                 bootRow.setNextFocusUpId(launchKeyRow.getId());
@@ -1111,14 +1319,14 @@ public class MainActivity extends Activity {
         }
         for (TextView box : new TextView[]{launcherBox, amazonBox}) {
             if (box == null) continue;
-            if (appsRow != null) box.setNextFocusUpId(appsRow.getId());
+            if (hijackRow != null) box.setNextFocusUpId(hijackRow.getId());
             if (bootRow != null) box.setNextFocusDownId(bootRow.getId());
         }
-        // Fire OS 7 loading-cover box: on the Replace-Home row, between the accessibility
-        // row above and the Apps-redirect row below; reach it via RIGHT, leave via UP/DOWN.
+        // Fire OS 7 loading-cover box on the Replace-Home row: the accessibility row is
+        // above, the map-custom-buttons row below; reach it via RIGHT, leave via UP/DOWN.
         if (coverBox != null) {
             if (accessRow != null) coverBox.setNextFocusUpId(accessRow.getId());
-            if (appsRow != null) coverBox.setNextFocusDownId(appsRow.getId());
+            if (launchKeyRow != null) coverBox.setNextFocusDownId(launchKeyRow.getId());
         }
         if (logBtn != null && menuRow != null) {
             logBtn.setNextFocusUpId(menuRow.getId());
@@ -1245,15 +1453,25 @@ public class MainActivity extends Activity {
         // State (target package, accessibility status, ...) might have
         // changed while this activity was paused, e.g. via the picker.
         refresh();
+        // If a branded button was learned while we were backgrounded, finish it now
+        // that we're front again (this is also where the content-app warning shows).
+        processPendingLearn();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        // Don't leave a learn listener (and the Activity refs it captures) live
-        // while backgrounded; the user can restart learning on return.
-        if (learningBox != null) cancelLearning();
+        // We deliberately do NOT cancel an in-progress learn here. Pressing a branded
+        // button (Apps, Live TV, ...) opens its app and backgrounds this screen, and
+        // that window is exactly what we're trying to capture. A learn is instead ended
+        // by Back (box listener), by a "leaving" window (Amazon home or the target
+        // launcher, meaning the user bailed via Home), or by onDestroy.
     }
+
+    // No onDestroy learn-cancel on purpose: pressing a branded button opens its app and
+    // may stop/destroy this screen right before its window arrives, so cancelling here
+    // would drop the very capture we want. An armed learn instead ends when a window
+    // actually arrives (captured, or ignored if it is a shell/leaving surface).
 
     /** Builds the persistent brand-colored title bar with logo, name and info button. */
     private LinearLayout buildTopBar() {
@@ -1477,7 +1695,6 @@ public class MainActivity extends Activity {
             bootSwitch.setChecked(prefs.getLaunchOnBoot());
             verboseSwitch.setChecked(prefs.isVerboseLogging());
             menuLpSwitch.setChecked(prefs.isMenuLongPressLaunch());
-            appsRedirectSwitch.setChecked(prefs.isAppsButtonRedirect());
             launchKeyEnabledSwitch.setChecked(prefs.isLaunchKeyEnabled());
         } finally {
             suppressSwitchEvents = false;
@@ -1485,10 +1702,10 @@ public class MainActivity extends Activity {
         // Not switches, but the same "re-read prefs" moment; skip the box that is
         // mid-learn so we don't overwrite its "Press a button…" prompt.
         if (launcherBox != null && learningBox != launcherBox) {
-            launcherBox.setText(keyFieldText(launcherPref()));
+            launcherBox.setText(boxText(launcherPref(), launcherWinPref()));
         }
         if (amazonBox != null && learningBox != amazonBox) {
-            amazonBox.setText(keyFieldText(amazonPref()));
+            amazonBox.setText(boxText(amazonPref(), amazonWinPref()));
         }
         if (coverBox != null) coverBox.setText(coverBoxText());
     }
@@ -1506,7 +1723,6 @@ public class MainActivity extends Activity {
         setRowEnabled(bootSwitch, accessOn);
         setRowEnabled(verboseSwitch, accessOn);
         setRowEnabled(menuLpSwitch, accessOn);
-        setRowEnabled(appsRedirectSwitch, accessOn);
         setRowEnabled(launchKeyEnabledSwitch, accessOn);
         // The value box is gated on both the service AND the shortcut toggle.
         updateLaunchKeyBoxState();

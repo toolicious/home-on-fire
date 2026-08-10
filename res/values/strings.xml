@@ -47,8 +47,8 @@
     <string name="launch_key_label">Map custom buttons</string>
     <string name="launch_key_launcher_label">Launcher:</string>
     <string name="launch_key_amazon_label">Amazon Home:</string>
-    <string name="launch_key_tip">Map spare remote buttons: one opens your target launcher, one jumps to the Amazon home screen. Turn on, then select a box and press ◉ OK to bind a button; hold ◉ OK to reset it. Usable buttons: ● ● ● ●, the number keys, channel up/down, subtitles, teletext, and the media keys (⏪ ⏵ ⏩). App buttons like ⊞ Apps, Prime or Netflix cannot be used.</string>
-    <string name="launch_key_tip_fos7">Map spare remote buttons: one opens your target launcher instantly (no delay, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds), one jumps to the Amazon home screen. Turn on, then select a box and press ◉ OK to bind a button; hold ◉ OK to reset it. Usable buttons: ● ● ● ●, the number keys, channel up/down, subtitles, teletext, and the media keys (⏪ ⏵ ⏩). App buttons like ⊞ Apps, Prime or Netflix cannot be used.</string>
+    <string name="launch_key_tip">Map spare remote buttons: one opens your target launcher, one jumps to the Amazon home screen. Turn on, select a box and press ◉ OK, then press the button you want; hold ◉ OK to reset. Buttons that send their own key (● ● ● ●, number keys, channel up/down, subtitles, teletext, media keys ⏪ ⏵ ⏩) are mapped directly. Buttons that instead open an Amazon app (⊞ Apps, 📺 Live TV, and similar) are redirected, not mapped: pressing one still opens its Amazon app for a moment before Home on Fire forwards you to your launcher, so it reacts a little slower and may flash briefly. A redirected button shows a ⧉ mark.</string>
+    <string name="launch_key_tip_fos7">Map spare remote buttons: one opens your target launcher, one jumps to the Amazon home screen. Turn on, select a box and press ◉ OK, then press the button you want; hold ◉ OK to reset. Buttons that send their own key (● ● ● ●, number keys, channel up/down, subtitles, teletext, media keys ⏪ ⏵ ⏩) are mapped directly and open instantly, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds. Buttons that instead open an Amazon app (⊞ Apps, 📺 Live TV, and similar) are redirected, not mapped: pressing one still opens its Amazon app for a moment before Home on Fire forwards you to your launcher, so it reacts a little slower and may flash briefly. A redirected button shows a ⧉ mark.</string>
     <string name="launch_key_launcher_box_tip">Press ◉ OK to bind a remote button that opens your target launcher directly (↩ Back cancels); hold ◉ OK to reset.</string>
     <string name="launch_key_amazon_box_tip">Press ◉ OK to bind a remote button that jumps to the Amazon home screen (↩ Back cancels); hold ◉ OK to reset.</string>
     <string name="launch_key_none">None</string>
@@ -59,6 +59,14 @@
     <string name="switch_apps_redirect_tip">Turn the ⊞ Apps button into a launcher shortcut. The Amazon app grid still flashes up first for a moment, then your target launcher takes over. Handy if you have no spare button to give up, though the custom launch key below opens without that flash.</string>
     <string name="switch_apps_redirect_tip_fos7">Turn the ⊞ Apps button into a launcher shortcut with no delay, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds. The Amazon app grid still flashes up first for a moment, then your target launcher takes over. Handy if you have no spare button to give up, though the custom launch key below opens without that flash.</string>
 
+    <!-- Beta universal redirect: learn branded buttons (Apps, Live TV, ...) that send no keycode. -->
+    <string name="redirect_learn_added">Mapped %1$s</string>
+    <string name="redirect_learn_warn_title">This button opens a content app</string>
+    <string name="redirect_learn_warn_msg">%1$s is an app you watch, not a shell screen. Mapping its button makes %1$s unreachable everywhere, even from its own tile. Map it anyway?</string>
+    <string name="redirect_learn_warn_add">Map anyway</string>
+    <string name="redirect_learn_warn_cancel">Cancel</string>
+    <string name="map_app_not_installed">This app is not installed, so its button only opens the Amazon Appstore. Install the app first, then map its button.</string>
+
     <!-- Friendly names for bound launch keys, shown on the custom-launch-key row. -->
     <string name="key_red">Red</string>
     <string name="key_green">Green</string>
@@ -68,6 +76,7 @@
     <string name="key_channel_down">Channel -</string>
     <string name="key_subtitles">Subtitles</string>
     <string name="key_teletext">Teletext</string>
+    <string name="key_live_tv">Live TV</string>
     <string name="key_play">Play</string>
     <string name="key_rewind">Rewind</string>
     <string name="key_forward">Fast-forward</string>

@@ -60,6 +60,7 @@ public class Prefs {
 
     public Prefs(Context ctx) {
         sp = ctx.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
+        maybeMigrateAppsToMap();
     }
 
     public String getTargetPackage() {
@@ -115,19 +116,9 @@ public class Prefs {
         sp.edit().putBoolean(KEY_MENU_LP, enabled).apply();
     }
 
-    /**
-     * When true, pressing the remote's Apps button opens the target
-     * launcher instead of Amazon's Apps grid. The button press itself is
-     * invisible to us, so this is driven off the Apps-grid window
-     * appearing (see HijackService.handleAppsGridArrival). Off by default.
-     */
-    public boolean isAppsButtonRedirect() {
-        return sp.getBoolean(KEY_APPS_REDIRECT, false);
-    }
-
-    public void setAppsButtonRedirect(boolean enabled) {
-        sp.edit().putBoolean(KEY_APPS_REDIRECT, enabled).apply();
-    }
+    // KEY_APPS_REDIRECT is legacy: the old standalone "Replace Apps button" toggle. It
+    // is only read once by maybeMigrateAppsToMap() to fold that setting into the launcher
+    // slot, then cleared. No runtime code consumes it anymore.
 
     /**
      * Master toggle for the custom launch key. Kept separate from the
@@ -168,6 +159,68 @@ public class Prefs {
 
     public void setAmazonKeycode(int keyCode) {
         sp.edit().putInt(KEY_AMAZON_KEYCODE, keyCode).apply();
+    }
+
+    // A "Map custom buttons" slot can be bound to either a keycode (the button
+    // sends a key) OR a window trigger (the button opens an Amazon app, e.g. Apps,
+    // Live TV, Guide, which emit no keycode). The window binding is a single
+    // "package/activity" string per slot; "" means none. Learning sets one form
+    // and clears the other, so a slot is never both at once.
+    private static final String KEY_LAUNCH_WINDOW = "launch_window";
+    private static final String KEY_AMAZON_WINDOW = "amazon_window";
+
+    /** No window binding for this slot. */
+    public static final String NO_WINDOW = "";
+
+    /**
+     * Stable sentinel for the ⊞ Apps button's window binding. The Apps grid's window
+     * class varies by device / Fire OS (it can be a bare android.widget.FrameLayout),
+     * so instead of a captured "pkg/activity" string this fixed value is stored, and
+     * HijackService matches it by PACKAGE ({@code com.amazon.venezia}). It has no slash,
+     * so it never collides with a real captured "pkg/activity" binding.
+     */
+    public static final String APPS_WINDOW = "com.amazon.venezia";
+
+    /** One-time flag: the old "Replace Apps button" toggle has been folded into a slot. */
+    private static final String KEY_MIGRATED_APPS = "migrated_apps_to_map";
+
+    /** Window trigger ("pkg/activity") bound to the target-launcher slot, or "". */
+    public String getLaunchWindow() {
+        return sp.getString(KEY_LAUNCH_WINDOW, NO_WINDOW);
+    }
+
+    public void setLaunchWindow(String pkgActivity) {
+        sp.edit().putString(KEY_LAUNCH_WINDOW, pkgActivity).apply();
+    }
+
+    /** Window trigger ("pkg/activity") bound to the Amazon-home slot, or "". */
+    public String getAmazonWindow() {
+        return sp.getString(KEY_AMAZON_WINDOW, NO_WINDOW);
+    }
+
+    public void setAmazonWindow(String pkgActivity) {
+        sp.edit().putString(KEY_AMAZON_WINDOW, pkgActivity).apply();
+    }
+
+    /**
+     * Migrates the old standalone "Replace Apps button" toggle into the new model: if it
+     * was on and the Launcher slot is still free, enable Map custom buttons and bind
+     * ⊞ Apps to the Launcher slot, so updating users keep the exact same behavior. Runs
+     * once (guarded by {@link #KEY_MIGRATED_APPS}); a no-op for fresh installs.
+     */
+    private void maybeMigrateAppsToMap() {
+        if (sp.getBoolean(KEY_MIGRATED_APPS, false)) return;
+        boolean appsWasOn = sp.getBoolean(KEY_APPS_REDIRECT, false);
+        boolean launcherSlotFree =
+                sp.getInt(KEY_LAUNCH_KEYCODE, DEFAULT_LAUNCH_KEYCODE) == DEFAULT_LAUNCH_KEYCODE
+                && NO_WINDOW.equals(sp.getString(KEY_LAUNCH_WINDOW, NO_WINDOW));
+        SharedPreferences.Editor e = sp.edit();
+        if (appsWasOn && launcherSlotFree) {
+            e.putBoolean(KEY_LAUNCH_KEY_ENABLED, true);
+            e.putString(KEY_LAUNCH_WINDOW, APPS_WINDOW);
+        }
+        e.remove(KEY_APPS_REDIRECT); // legacy toggle, no longer consumed at runtime
+        e.putBoolean(KEY_MIGRATED_APPS, true).apply();
     }
 
     /** Start-cover grace before the masking overlay is shown (ms). */

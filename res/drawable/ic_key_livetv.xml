@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Live TV button glyph for the "Live TV" keycap. Material Symbols "tv_gen"
+    (Apache 2.0, github.com/google/material-design-icons), used unmodified.
+
+    The upstream artwork is authored in a 960x960 grid whose origin sits at the
+    top-left of a viewBox shifted to "0 -960 960 960", i.e. all y values are
+    negative. Android vectors have no viewBox offset, so instead of rewriting the
+    path (error-prone) the group below shifts it down by 960 into the 0..960 space.
+
+    Tinted at runtime to the badge color (see KeyBadges).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <group android:translateY="960">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M160,-120v-80q-33,0 -56.5,-23.5T80,-280v-440q0,-33 23.5,-56.5T160,-800h640q33,0 56.5,23.5T880,-720v440q0,33 -23.5,56.5T800,-200v80h-40l-26,-80H227l-27,80h-40Zm0,-160h640v-440H160v440Z" />
+    </group>
+</vector>

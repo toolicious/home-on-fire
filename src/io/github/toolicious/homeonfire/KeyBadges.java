@@ -48,10 +48,12 @@ public final class KeyBadges {
         }
     }
 
-    /** The "⊞ Apps" marker becomes a vector icon keycap. */
+    /** The "⊞ Apps" and "📺 Live TV" markers become vector icon keycaps. */
     private static final IconKey[] ICON_KEYS = {
             new IconKey(new String[]{"⊞" + NB + "Apps", "⊞ Apps"},
                     "Apps", R.drawable.ic_key_apps),
+            new IconKey(new String[]{"📺" + NB + "Live TV", "📺 Live TV"},
+                    "Live TV", R.drawable.ic_key_livetv),
     };
 
     // Single-char markers in the tooltip, each replaced by an inline (no keycap)
