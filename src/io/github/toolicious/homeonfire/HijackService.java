@@ -1137,8 +1137,13 @@ public class HijackService extends AccessibilityService {
                     if (pkg == null) continue;
                     String pkgStr = pkg.toString();
                     // Skip the long-press panel itself; we want the app underneath it.
-                    CharSequence rootCls = root.getClassName();
-                    if (isLongPressPanel(pkgStr, rootCls == null ? null : rootCls.toString())) {
+                    // Matched by PACKAGE on purpose: a window root node reports a View
+                    // class (android.widget.FrameLayout, ...), never the activity, so an
+                    // activity-level test could never match here. Skipping all of
+                    // com.amazon.tv.settings.v2 also means a long-press while genuinely
+                    // inside Settings falls back to the app before it, which is the same
+                    // treatment the Fire OS 8 panel has always had.
+                    if (QUICKSETTINGS_PKG.equals(pkgStr) || AMAZON_SETTINGS_PKG.equals(pkgStr)) {
                         continue;
                     }
                     return pkgStr;

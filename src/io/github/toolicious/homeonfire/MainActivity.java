@@ -1054,7 +1054,6 @@ public class MainActivity extends Activity {
      * the target row (focusable area on the left, round action button on
      * the right) so d-pad focus stays predictable.
      */
-
     private void addVerboseRow(LinearLayout content) {
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.HORIZONTAL);
