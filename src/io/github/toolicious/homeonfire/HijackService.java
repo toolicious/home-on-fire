@@ -83,6 +83,27 @@ public class HijackService extends AccessibilityService {
             "com.amazon.tv.launcher.ui.HomeActivity_vNext";
 
     /**
+     * Amazon Kids home shell, shown inside a child profile. A child profile is its own
+     * Android user with separate app storage and secure settings, so Home on Fire only
+     * runs there if it was installed AND its accessibility service enabled for that user.
+     * Both are deliberate acts, which is why this needs no extra opt-in switch.
+     *
+     * Kept as a fixed second entry rather than resolving "whatever is currently home":
+     * the target launcher declares CATEGORY_HOME as well, so a dynamic lookup could
+     * mistake our own target for Amazon's home and redirect it onto itself.
+     */
+    private static final String KIDS_LAUNCHER = "com.amazon.tahoe";
+    private static final String KIDS_LAUNCHER_HOME_ACTIVITY =
+            "com.amazon.tahoe.ftv.HomeActivity";
+
+    /** True for either Amazon home surface: the regular launcher or the kids launcher. */
+    private static boolean isAmazonHomeWindow(String pkg, String cls) {
+        if (pkg == null || cls == null) return false;
+        return (AMAZON_LAUNCHER.equals(pkg) && AMAZON_LAUNCHER_HOME_ACTIVITY.equals(cls))
+                || (KIDS_LAUNCHER.equals(pkg) && KIDS_LAUNCHER_HOME_ACTIVITY.equals(cls));
+    }
+
+    /**
      * Fire OS shows this overlay panel when the user holds the Home
      * button on the remote. Detecting its appearance is the only way
      * we can react to a long-press of Home. The key event itself is
@@ -491,10 +512,10 @@ public class HijackService extends AccessibilityService {
             onMaskTargetEvent(cls);
         }
 
-        boolean isAmazonHome = AMAZON_LAUNCHER.equals(pkgStr)
-                && cls != null
-                && AMAZON_LAUNCHER_HOME_ACTIVITY.equals(cls.toString());
+        boolean isAmazonHome = isAmazonHomeWindow(pkgStr, clsStr);
         onAmazonHomeActivity = isAmazonHome;
+        // Deliberately the regular launcher only: this gates the Home-tab bounds capture
+        // for the Back/OK-on-Home-tab gesture, and the kids launcher has no such tab.
         boolean inAmazonLauncher = AMAZON_LAUNCHER.equals(pkgStr);
 
         if (prefs.isVerboseLogging()) {
