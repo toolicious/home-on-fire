@@ -60,6 +60,14 @@ public class MainActivity extends Activity {
     private LinearLayout hijackRow;
     /** Fire OS 7 only: the loading-cover choice box (Animation vs. black screen) beside Replace Home. */
     private TextView coverBox;
+    /**
+     * Escape-gesture sub-row under Replace Home, plus its two switch-and-label blocks.
+     * Unlike every other row, the switches here are inside focusable blocks rather than
+     * owned by the row: two switches cannot share one focusable row. Each block carries
+     * its Switch as its tag.
+     */
+    private LinearLayout escapeRow;
+    private LinearLayout escapeLongPair, escapeDoublePair;
     /** The two "map custom button" value boxes: one for the target launcher, one for Amazon home. */
     private TextView launcherBox, amazonBox;
     /**
@@ -443,6 +451,7 @@ public class MainActivity extends Activity {
                 if (suppressSwitchEvents) return;
                 prefs.setHijackEnabled(isChecked);
                 updateCoverBoxState(); // the cover choice only applies while the redirect runs
+                updateEscapeBoxState(); // so do the escape gestures
             }
         });
         LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(
@@ -471,17 +480,137 @@ public class MainActivity extends Activity {
         hijackSwitch = sw;
         hijackRow = row;
 
+        // Everything else on this row hangs to the right of the weighted label: first the
+        // escape block, then (Fire OS 7 only) the loading-cover choice.
+        LinearLayout outer = new LinearLayout(this);
+        outer.setOrientation(LinearLayout.HORIZONTAL);
+        outer.setGravity(Gravity.CENTER_VERTICAL);
+        outer.addView(row, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        addEscapeBlock(outer);
         if (isFos7OrOlder()) {
-            LinearLayout outer = new LinearLayout(this);
-            outer.setOrientation(LinearLayout.HORIZONTAL);
-            outer.setGravity(Gravity.CENTER_VERTICAL);
-            outer.addView(row, new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             coverBox = addCoverBox(outer);
             updateCoverBoxState(); // start grayed/unfocusable if the redirect is off
-            content.addView(outer);
-        } else {
-            content.addView(row);
+        }
+        content.addView(outer);
+    }
+
+    /**
+     * The two escape gestures, appended to the Replace Home row itself rather than to a
+     * row of their own: they only qualify that redirect, so they belong beside it and
+     * save a whole line of vertical space. Caption plus both switch blocks form one
+     * right-hand group; the row's weighted label pushes the group to the right.
+     */
+    private void addEscapeBlock(LinearLayout parent) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.HORIZONTAL);
+        block.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView caption = new TextView(this);
+        caption.setText(getString(R.string.escape_label));
+        caption.setTextSize(15);
+        caption.setTextColor(Colors.NEUTRAL);
+        block.addView(caption, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        escapeLongPair = addTogglePair(block, getString(R.string.escape_long_label),
+                new BoolPref() {
+                    @Override public boolean get() { return prefs.isEscapeLongPress(); }
+                    @Override public void set(boolean v) { prefs.setEscapeLongPress(v); }
+                }, 0, R.string.escape_long_box_tip);
+        escapeDoublePair = addTogglePair(block, getString(R.string.escape_double_label),
+                new BoolPref() {
+                    @Override public boolean get() { return prefs.isEscapeDoublePress(); }
+                    @Override public void set(boolean v) { prefs.setEscapeDoublePress(v); }
+                }, dp(2), R.string.escape_double_box_tip);
+
+        escapeRow = block;
+        LinearLayout.LayoutParams blockLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blockLp.leftMargin = dp(12);
+        parent.addView(block, blockLp);
+        updateEscapeBoxState();
+    }
+
+    /** Get/set bridge for a boolean-valued pref shown in a value box. */
+    private interface BoolPref {
+        boolean get();
+        void set(boolean value);
+    }
+
+    /**
+     * Builds one focusable "[switch] Label" block, using the same Switch widget the rows
+     * start with. The Switch itself stays non-focusable and listener-free, exactly like
+     * everywhere else; the surrounding block owns focus and the click, so a programmatic
+     * setChecked can never loop back into a listener. Returns the block, with the Switch
+     * stashed as its tag.
+     */
+    private LinearLayout addTogglePair(LinearLayout parent, String label, final BoolPref pref,
+                                       int leftMargin, int tipRes) {
+        final LinearLayout pair = new LinearLayout(this);
+        pair.setOrientation(LinearLayout.HORIZONTAL);
+        pair.setGravity(Gravity.CENTER_VERTICAL);
+        pair.setPadding(dp(8), dp(4), dp(8), dp(4));
+        pair.setBackground(getDrawable(R.drawable.row_focus_bg));
+        pair.setFocusable(true);
+        pair.setClickable(true);
+
+        final Switch sw = new Switch(this);
+        sw.setChecked(pref.get());
+        sw.setFocusable(false);
+        sw.setClickable(false);
+        LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        swLp.rightMargin = dp(10);
+        pair.addView(sw, swLp);
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(15);
+        tv.setTextColor(Colors.NEUTRAL);
+        pair.addView(tv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        pair.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!pair.isEnabled()) return;
+                pref.set(!pref.get());
+                sw.setChecked(pref.get());
+            }
+        });
+        pair.setOnKeyListener(new RightNavGuard(null));
+        pair.setTag(sw);
+        attachTip(pair, getString(tipRes));
+
+        LinearLayout.LayoutParams pairLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        pairLp.leftMargin = leftMargin;
+        parent.addView(pair, pairLp);
+        return pair;
+    }
+
+    /** Enables/greys one switch block and drops it out of the focus order when unusable. */
+    private void setPairUsable(LinearLayout pair, boolean usable, View fallbackRow) {
+        if (pair == null) return;
+        boolean wasFocused = pair.isFocused();
+        pair.setEnabled(usable);
+        pair.setFocusable(usable);
+        pair.setClickable(usable);
+        pair.setAlpha(usable ? 1f : 0.4f);
+        if (!usable && wasFocused && fallbackRow != null) fallbackRow.requestFocus();
+    }
+
+    /** The escape switches are usable only while the service AND Replace Home are on. */
+    private void updateEscapeBoxState() {
+        boolean usable = accessSwitch.isChecked() && prefs.isHijackEnabled();
+        setPairUsable(escapeLongPair, usable, hijackRow);
+        setPairUsable(escapeDoublePair, usable, hijackRow);
+        if (escapeRow != null) {
+            // Never made focusable: the caption is not a control, the two switch blocks
+            // are. Only the dimming is shared with them.
+            escapeRow.setEnabled(usable);
+            escapeRow.setAlpha(usable ? 1f : 0.4f);
         }
     }
 
@@ -1306,6 +1435,8 @@ public class MainActivity extends Activity {
         // Pin the map-custom-buttons switch-row into the row chain so d-pad UP/DOWN
         // never lands on (or skips past) the two value boxes beside it; the boxes
         // are reached only via RIGHT. The row directly above it is Replace Home.
+        ensureId(escapeLongPair);
+        ensureId(escapeDoublePair);
         if (launchKeyRow != null) {
             if (hijackRow != null) {
                 hijackRow.setNextFocusDownId(launchKeyRow.getId());
@@ -1315,6 +1446,14 @@ public class MainActivity extends Activity {
                 bootRow.setNextFocusUpId(launchKeyRow.getId());
                 launchKeyRow.setNextFocusDownId(bootRow.getId());
             }
+        }
+        // The escape switches sit on the Replace-Home row and are reached with RIGHT,
+        // exactly like the loading-cover box; UP/DOWN leaves the row to its neighbours
+        // instead of hopping sideways between the two switches.
+        for (View pair : new View[]{escapeLongPair, escapeDoublePair}) {
+            if (pair == null) continue;
+            if (accessRow != null) pair.setNextFocusUpId(accessRow.getId());
+            if (launchKeyRow != null) pair.setNextFocusDownId(launchKeyRow.getId());
         }
         for (TextView box : new TextView[]{launcherBox, amazonBox}) {
             if (box == null) continue;
@@ -1707,6 +1846,14 @@ public class MainActivity extends Activity {
             amazonBox.setText(boxText(amazonPref(), amazonWinPref()));
         }
         if (coverBox != null) coverBox.setText(coverBoxText());
+        // The switches inside these blocks carry no listener, so setting them here
+        // cannot write back into prefs.
+        if (escapeLongPair != null && escapeLongPair.getTag() instanceof Switch) {
+            ((Switch) escapeLongPair.getTag()).setChecked(prefs.isEscapeLongPress());
+        }
+        if (escapeDoublePair != null && escapeDoublePair.getTag() instanceof Switch) {
+            ((Switch) escapeDoublePair.getTag()).setChecked(prefs.isEscapeDoublePress());
+        }
     }
 
     /**
@@ -1726,6 +1873,7 @@ public class MainActivity extends Activity {
         // The value box is gated on both the service AND the shortcut toggle.
         updateLaunchKeyBoxState();
         updateCoverBoxState();
+        updateEscapeBoxState();
         updateLogButtonVisibility();
         // The tuning section's only reveal/hide anchor is the verbose row, which is
         // unfocusable while the service is off; collapse the section so it cannot

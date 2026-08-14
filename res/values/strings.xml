@@ -38,6 +38,13 @@
     <string name="mask_cover_black">Black screen</string>
     <string name="mask_cover_tip">On Fire OS 7 the system holds a ⌂ Home press for up to 5 seconds. This chooses what covers Amazon\'s home during the wait. Animation plays a short loading scene. Black screen shows a plain black screen with a loading message. Fire OS 8 has no delay, so nothing is shown. Hold ◉ OK to preview the current choice.</string>
 
+    <!-- Escape gestures, shown as a sub-row under Replace Home. Both default to on. -->
+    <string name="escape_label">Escape to Amazon home:</string>
+    <string name="escape_long_label">Long-press</string>
+    <string name="escape_double_label">Double-press</string>
+    <string name="escape_long_box_tip">Hold ⌂ Home to switch between your launcher and the Amazon home screen. Turn this off if you would rather see the panel that a long press opens, with its profile, sleep and mirroring tiles. Some remotes have a settings button that opens the very same panel, and Home on Fire cannot tell the two apart, so turning this off also stops that button from switching launchers. Press ◉ OK to switch it on or off.</string>
+    <string name="escape_double_box_tip">Press ⌂ Home twice, about a second apart, to stay on the Amazon home screen instead of being sent back to your launcher. Turn this off if you often press ⌂ Home repeatedly and end up on Amazon\'s home by accident. Press ◉ OK to switch it on or off.</string>
+
     <string name="switch_boot">Launch on boot</string>
     <string name="switch_boot_tip">Open the target app automatically when the device boots or wakes from standby.</string>
     <string name="switch_menu_lp">☰ Menu long-press opens this config screen</string>

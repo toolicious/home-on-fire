@@ -172,6 +172,32 @@ public class Prefs {
     /** No window binding for this slot. */
     public static final String NO_WINDOW = "";
 
+    // The two escape gestures that leave the target for Amazon's home. Both default to
+    // on (the behaviour that shipped before they were configurable). They are separate
+    // because the complaints about them are separate: the long-press swallows the panel
+    // a remote's settings button also opens (issue #5) and hides its tiles (issue #7),
+    // while the double-press surprises users who simply press Home twice impatiently.
+    private static final String KEY_ESCAPE_LONGPRESS = "escape_longpress";
+    private static final String KEY_ESCAPE_DOUBLEPRESS = "escape_doublepress";
+
+    /** Long-press Home acts as an escape to Amazon's home (and back). */
+    public boolean isEscapeLongPress() {
+        return sp.getBoolean(KEY_ESCAPE_LONGPRESS, true);
+    }
+
+    public void setEscapeLongPress(boolean enabled) {
+        sp.edit().putBoolean(KEY_ESCAPE_LONGPRESS, enabled).apply();
+    }
+
+    /** A second Home press within the debounce window escapes to Amazon's home. */
+    public boolean isEscapeDoublePress() {
+        return sp.getBoolean(KEY_ESCAPE_DOUBLEPRESS, true);
+    }
+
+    public void setEscapeDoublePress(boolean enabled) {
+        sp.edit().putBoolean(KEY_ESCAPE_DOUBLEPRESS, enabled).apply();
+    }
+
     /**
      * Stable sentinel for the ⊞ Apps button's window binding. The Apps grid's window
      * class varies by device / Fire OS (it can be a bare android.widget.FrameLayout),

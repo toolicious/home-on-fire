@@ -328,6 +328,13 @@ public class HijackService extends AccessibilityService {
     private static final long HIJACK_DEBOUNCE_MS = 1_000L;
 
     /**
+     * Short guard used instead of {@link #HIJACK_DEBOUNCE_MS} when the double-press
+     * escape is switched off: long enough to swallow the repeat events a single Home
+     * press produces, short enough that a deliberate second press still redirects.
+     */
+    private static final long DUPLICATE_EVENT_GUARD_MS = 300L;
+
+    /**
      * Wall-clock deadline (System.currentTimeMillis()) until which the
      * hijack is suspended. Set by {@link #requestBypass} only. The
      * double-press path does NOT set a lingering bypass; the next Home
@@ -605,6 +612,18 @@ public class HijackService extends AccessibilityService {
      */
     private void handleQuickSettingsLongPress() {
         if (!prefs.isHijackEnabled()) return;
+        // Turned off, the panel is left alone entirely, so it stays on screen with its
+        // tiles (profiles, sleep, mirroring) and a remote's settings button, which opens
+        // the very same window and is indistinguishable from a long-press, stops
+        // switching launchers. The system broadcast that WOULD tell the two apart
+        // (com.amazon.tv.action.HOME_LONGPRESSED) is guarded by a signature-level
+        // permission, so no amount of detection can separate them from here.
+        if (!prefs.isEscapeLongPress()) {
+            if (prefs.isVerboseLogging()) {
+                Log.i(TAG, "Long-press panel ignored: long-press escape is off");
+            }
+            return;
+        }
 
         String target = prefs.getTargetPackage();
         if (target == null || target.isEmpty()) return;
@@ -734,13 +753,25 @@ public class HijackService extends AccessibilityService {
 
         if (now < bypassUntil) return;
 
-        if (now - lastHijackAt < HIJACK_DEBOUNCE_MS) {
+        // This window serves two purposes at once, which is why turning the gesture off
+        // shortens it instead of removing it:
+        //  - technical: one Home press can produce several Amazon-home events, and
+        //    without a guard each would launch the target again;
+        //  - the feature: a deliberate second press within the full window means
+        //    "leave me on Amazon home", i.e. the double-press escape.
+        // With the escape off we keep only the short technical guard, so a deliberate
+        // second press (well over 300 ms after the first) redirects again instead of
+        // stranding the user on Amazon home.
+        long debounce = prefs.isEscapeDoublePress()
+                ? HIJACK_DEBOUNCE_MS : DUPLICATE_EVENT_GUARD_MS;
+        if (now - lastHijackAt < debounce) {
             boolean backSinceHijack = lastKeyCode == KeyEvent.KEYCODE_BACK
                     && lastKeyTime > lastHijackAt;
             if (!backSinceHijack) {
                 if (prefs.isVerboseLogging()) {
-                    Log.i(TAG, "Auto-hijack skipped: within debounce, no Back"
-                            + " since last hijack (double-press escape)");
+                    Log.i(TAG, "Auto-hijack skipped: within " + debounce + "ms guard,"
+                            + " no Back since last hijack (double-press escape "
+                            + (prefs.isEscapeDoublePress() ? "on" : "off") + ")");
                 }
                 return;
             }
