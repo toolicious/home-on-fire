@@ -35,3 +35,6 @@ _*.deleteme
 *.swo
 .DS_Store
 Thumbs.db
+
+# Files staged for the user to review and delete
+_trash/
