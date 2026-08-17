@@ -112,10 +112,10 @@ public class HijackService extends AccessibilityService {
     private static final String QUICKSETTINGS_PKG = "com.amazon.tv.quicksettings.ui";
 
     /**
-     * Fire OS 6/7 equivalent of the Quick-Settings panel: a long-press of Home opens the
-     * settings HUD overlay instead ({@code com.amazon.tv.quicksettings.ui} does not exist
-     * before Fire OS 8), which is why the long-press gestures never fired there (issue #7,
-     * originally reported in #3).
+     * Older equivalent of the Quick-Settings panel: where
+     * {@link #QUICKSETTINGS_PKG} does not exist, a long-press of Home opens the settings
+     * HUD overlay instead, which is why the long-press gestures never fired there (issue
+     * #7, originally reported in #3).
      *
      * Matched on the ACTIVITY, never on the package: {@code com.amazon.tv.settings.v2} also
      * hosts the ordinary Settings screens, and treating those as a long-press would make
@@ -127,13 +127,54 @@ public class HijackService extends AccessibilityService {
     private static final String AMAZON_SETTINGS_PKG = "com.amazon.tv.settings.v2";
     private static final String HUD_ACTIVITY_SUFFIX = "hud.HudActivity";
 
-    /** The Fire OS 6/7 long-press HUD overlay (not an ordinary Settings screen). */
-    private static boolean isHudPanel(String pkg, String cls) {
+    /**
+     * Whether this device ships the new Fire TV UI, i.e. has {@link #QUICKSETTINGS_PKG}.
+     * Cached because a package cannot appear without an OTA, which restarts us anyway.
+     * {@code null} until first queried.
+     */
+    private Boolean quickSettingsUiPresent;
+
+    /**
+     * The long-press panel is one window or the other, never both, and which one it is
+     * follows the UI generation rather than the Fire OS major version:
+     *
+     *  - New UI ({@link #QUICKSETTINGS_PKG} installed, Fire OS 8.1.8.0 and up): Quick
+     *    Settings is the long-press panel, and the HUD is what the profile switch shows
+     *    after the PIN. Treating the HUD as a long-press there yanks the user out of the
+     *    profile switch (reported for the Amazon Kids launcher in issue #7).
+     *  - Older UI (no such package, Fire OS 7 and Fire OS 8.1.1.6 and older): the HUD is
+     *    the long-press panel. The remote's settings button opens the very same window, so
+     *    the two are indistinguishable from here; the user decides via the long-press
+     *    escape switch whether that is worth it.
+     */
+    private boolean hasQuickSettingsUi() {
+        if (quickSettingsUiPresent == null) {
+            boolean present;
+            try {
+                getPackageManager().getPackageInfo(QUICKSETTINGS_PKG, 0);
+                present = true;
+            } catch (Exception e) {
+                // NameNotFound on older builds. Note this needs the matching
+                // <queries><package> entry in the manifest, or package visibility
+                // filtering hides it on API 30+ even when it is installed.
+                present = false;
+            }
+            quickSettingsUiPresent = present;
+            Log.i(TAG, "Long-press panel source: " + (present
+                    ? QUICKSETTINGS_PKG + " (new Fire TV UI; settings HUD left alone)"
+                    : AMAZON_SETTINGS_PKG + " HUD (no " + QUICKSETTINGS_PKG + " on this build)"));
+        }
+        return quickSettingsUiPresent;
+    }
+
+    /** The long-press HUD overlay, on builds where the HUD is what a long-press opens. */
+    private boolean isHudPanel(String pkg, String cls) {
+        if (hasQuickSettingsUi()) return false;
         return AMAZON_SETTINGS_PKG.equals(pkg) && cls != null && cls.endsWith(HUD_ACTIVITY_SUFFIX);
     }
 
-    /** The long-press panel on either generation: Quick Settings (FOS8) or the HUD (FOS6/7). */
-    private static boolean isLongPressPanel(String pkg, String cls) {
+    /** The long-press panel of whichever UI generation this device runs. */
+    private boolean isLongPressPanel(String pkg, String cls) {
         return QUICKSETTINGS_PKG.equals(pkg) || isHudPanel(pkg, cls);
     }
 

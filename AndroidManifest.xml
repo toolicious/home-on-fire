@@ -25,6 +25,13 @@
         <intent>
             <action android:name="android.settings.SETTINGS" />
         </intent>
+        <!--
+            Presence of this package tells the new Fire TV UI apart from the older
+            one, which decides whether the settings HUD is the long-press panel or
+            the profile switch. It has no launcher entry, so without this entry
+            package visibility filtering hides it from us on API 30+.
+        -->
+        <package android:name="com.amazon.tv.quicksettings.ui" />
     </queries>
 
     <application
