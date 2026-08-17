@@ -201,6 +201,10 @@ public class HijackService extends AccessibilityService {
         super.onServiceConnected();
         sInstance = this;
         prefs = new Prefs(this);
+        // Not gated on verbose logging: a shared logcat dump has to name
+        // the build that produced it even when the tester only turned
+        // verbose on later (or never).
+        AppInfo.logIdentity(this, TAG, "Service connected");
         mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         // A fresh service instance must not inherit a suppression window

@@ -15,8 +15,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.util.List;
 
 /**
@@ -280,21 +278,11 @@ public class LogViewerActivity extends Activity {
     }
 
     private String appVersion() {
-        try {
-            return "v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-        } catch (Exception e) {
-            return "";
-        }
+        return "v" + AppInfo.versionName(this);
     }
 
     private String fireOsVersion() {
-        String v = getProp("ro.build.version.name");
-        if (v.isEmpty()) v = getProp("ro.build.version.fireos");
-        return v.isEmpty() ? "?" : v;
-    }
-
-    private String getProp(String name) {
-        return runCmd(new String[]{"getprop", name}).trim();
+        return AppInfo.fireOsVersion();
     }
 
     /**
@@ -305,7 +293,7 @@ public class LogViewerActivity extends Activity {
      * marker.
      */
     private String readOwnLog() {
-        String raw = runCmd(new String[]{
+        String raw = AppInfo.runCmd(new String[]{
                 "logcat", "-d", "-v", "time", "-t", "400", "HomeOnFire:V", "*:S"});
         StringBuilder sb = new StringBuilder();
         for (String line : raw.split("\n")) {
@@ -313,32 +301,6 @@ public class LogViewerActivity extends Activity {
             sb.append(line).append('\n');
         }
         return sb.toString().trim();
-    }
-
-    /**
-     * Runs a short command and returns its combined output, capped so a
-     * runaway process can't grow the string without bound. Any failure
-     * (process blocked, SELinux denial on a locked build) yields "".
-     */
-    private String runCmd(String[] cmd) {
-        Process p = null;
-        try {
-            p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            int n = 0;
-            while ((line = r.readLine()) != null && n < 600) {
-                sb.append(line).append('\n');
-                n++;
-            }
-            r.close();
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        } finally {
-            if (p != null) p.destroy();
-        }
     }
 
     private int dp(int value) {

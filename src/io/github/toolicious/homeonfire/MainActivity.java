@@ -1205,6 +1205,11 @@ public class MainActivity extends Activity {
             public void onCheckedChanged(CompoundButton b, boolean isChecked) {
                 if (suppressSwitchEvents) return;
                 prefs.setVerboseLogging(isChecked);
+                // Stamp the build right where a tester starts reproducing,
+                // so the detailed lines that follow are never orphaned.
+                if (isChecked) {
+                    AppInfo.logIdentity(MainActivity.this, "HomeOnFire", "Verbose logging on");
+                }
                 updateLogButtonVisibility();
             }
         });
