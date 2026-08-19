@@ -389,6 +389,10 @@ Manual pipeline if you'd rather not use the script:
   OS build you're on; the `WRITE_SECURE_SETTINGS` grant is the
   reliable way to enable the service. The app shows the exact
   ADB command as a Toast when toggling fails.
+- **A kids profile can lock you in** if your custom launcher (Projectivy,
+  for example) is set to claim <kbd>⌂ Home</kbd> itself, because the
+  long-press panel is the only way to switch profiles there. Turn
+  **Replace ⌂ Home button** off to get out.
 
 ---
 

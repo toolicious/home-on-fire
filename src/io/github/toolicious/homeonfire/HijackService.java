@@ -736,6 +736,25 @@ public class HijackService extends AccessibilityService {
                     + ") target=" + target);
         }
 
+        // Inside a kids profile the panel is the only way out. Amazon disables
+        // com.amazon.tv.launcher there by policy, so the tiles behind this panel
+        // (switch profile, exit the kids profile) are the single route back, and
+        // the profile has no reachable Settings at all. Consuming the panel here
+        // strands the user: long-press in the target escapes to the kids home,
+        // and a long-press there would bounce straight back to the target. That
+        // loop is only escapable by switching the Home replacement off in our own
+        // config screen, which is exactly what a kids profile is meant to prevent
+        // a child from reaching (issue #7). So leave the panel alone and let the
+        // profile switch through. A short Home press is unaffected and still
+        // opens the target from the kids home.
+        if (KIDS_LAUNCHER.equals(prev)) {
+            if (prefs.isVerboseLogging()) {
+                Log.i(TAG, "Long-press panel left alone: kids launcher underneath"
+                        + " (profile switch would otherwise be unreachable)");
+            }
+            return;
+        }
+
         if (target.equals(prev)) {
             redirectToAmazonHome("Long-press Home in target");
             return;
