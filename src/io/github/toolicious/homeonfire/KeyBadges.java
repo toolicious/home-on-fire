@@ -28,12 +28,18 @@ public final class KeyBadges {
     /** Non-breaking space: tooltips join glyph and word with it so a badge never wraps. */
     private static final String NB = " ";
 
-    /** Glyph-plus-label pairs identifying text-only remote buttons (NBSP + space variants). */
+    /**
+     * Glyph-plus-label pairs identifying text-only remote buttons (NBSP + space variants).
+     * "Netflix" has no glyph: that button carries nothing but the service name, which is
+     * also what makes it a good example of a button that opens an app rather than sending
+     * a key code.
+     */
     private static final String[] KEY_LABELS = {
             "⌂" + NB + "Home", "⌂ Home",
             "↩" + NB + "Back", "↩ Back",
             "◉" + NB + "OK",   "◉ OK",
             "☰" + NB + "Menu", "☰ Menu",
+            "Netflix",
     };
 
     /** An icon-plus-word keycap: the in-text markers to match, the word, and its vector icon. */
