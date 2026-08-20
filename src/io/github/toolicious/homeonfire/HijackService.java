@@ -607,6 +607,13 @@ public class HijackService extends AccessibilityService {
                 handleWindowAmazon();
                 return;
             }
+            if (mapOn) {
+                String customApp = customAppForWindow(pkgStr, clsStr);
+                if (customApp != null) {
+                    handleWindowLaunch(pkgStr, customApp, "Redirect from custom button");
+                    return;
+                }
+            }
         }
         if (isAmazonHome) {
             handleAmazonHomeArrival();
@@ -889,6 +896,15 @@ public class HijackService extends AccessibilityService {
             if (prefs.isVerboseLogging()) Log.i(TAG, "windowLaunch skip: no/invalid target");
             return;
         }
+        handleWindowLaunch(brandedPkg, target, "Redirect from mapped app button");
+    }
+
+    /**
+     * @param appToLaunch what the button should open: the target launcher for the fixed
+     *   slot, any installed app for a custom mapping.
+     */
+    private void handleWindowLaunch(final String brandedPkg, final String appToLaunch,
+                                    String reason) {
         // Deliberately NOT gated by bypassUntil: a mapped button is an explicit user
         // action and must redirect even right after an escape-to-Amazon-home (which sets
         // the bypass to hold back the AUTO hijack, not explicit presses). The debounce
@@ -900,18 +916,17 @@ public class HijackService extends AccessibilityService {
             }
             return;
         }
-        launchTarget(target, "Redirect from mapped app button", false);
+        launchTarget(appToLaunch, reason, false);
         // Some branded apps keep launching activities that re-cover the target right
         // after (e.g. Prime: DeepLinkRouting then Landing). Re-assert the target ONLY if
         // that same branded app is what came back to the front, so we win the launch-chain
         // race without yanking the user back if they deliberately navigated elsewhere in
         // the meantime (or if the redirect was already clean and the target is up).
         if (mainHandler != null && brandedPkg != null) {
-            final String t = target;
             final Runnable reassert = new Runnable() {
                 @Override public void run() {
                     if (brandedPkg.equals(currentForegroundPkg)) {
-                        launchTarget(t, "Redirect re-assert", false);
+                        launchTarget(appToLaunch, "Redirect re-assert", false);
                     }
                 }
             };
@@ -925,6 +940,31 @@ public class HijackService extends AccessibilityService {
         long now = System.currentTimeMillis();
         if (now - lastHijackAt < HIJACK_DEBOUNCE_MS) return;
         redirectToAmazonHome("Mapped app button to Amazon home");
+    }
+
+    /**
+     * The app a custom mapping wants opened for this window, or null if no mapping
+     * covers it. Same trigger semantics as the two fixed slots, so a button that opens
+     * an Amazon app (Live TV, Prime, ...) can point anywhere the user likes.
+     */
+    private String customAppForWindow(String pkgStr, String clsStr) {
+        for (CustomMap m : prefs.getCustomMaps()) {
+            if (m.app.isEmpty() || m.window.isEmpty()) continue;
+            // A mapping onto its own app would redirect the app to itself; the config
+            // screen refuses to create one, and an imported/edited setting can't either.
+            if (m.app.equals(pkgStr)) continue;
+            if (windowMatches(pkgStr, clsStr, m.window)) return m.app;
+        }
+        return null;
+    }
+
+    /** The app a custom mapping binds to this key code, or null if none does. */
+    private String customAppForKey(int keyCode) {
+        for (CustomMap m : prefs.getCustomMaps()) {
+            if (m.app.isEmpty() || m.keyCode == Prefs.DEFAULT_LAUNCH_KEYCODE) continue;
+            if (m.keyCode == keyCode) return m.app;
+        }
+        return null;
     }
 
     /**
@@ -1089,6 +1129,18 @@ public class HijackService extends AccessibilityService {
             redirectToAmazonHome("Amazon key " + keyCode);
             consumedDownKey = keyCode;
             return true;
+        }
+
+        // Custom mappings: the same instant path, but each one opens its own app.
+        // Swallowed only when the app really started, so a key bound to a since-removed
+        // app keeps working as whatever the system makes of it.
+        if (prefs.isLaunchKeyEnabled() && event.getRepeatCount() == 0) {
+            String customApp = customAppForKey(keyCode);
+            if (customApp != null
+                    && launchTarget(customApp, "Custom key " + keyCode, false)) {
+                consumedDownKey = keyCode;
+                return true;
+            }
         }
 
         boolean consumed = tryBackOrCenterHijack(keyCode);

@@ -70,6 +70,31 @@ public class MainActivity extends Activity {
     private LinearLayout escapeLongPair, escapeDoublePair;
     /** The two "map custom button" value boxes: one for the target launcher, one for Amazon home. */
     private TextView launcherBox, amazonBox;
+    /** Third box on that row: opens the dialog for freely defined "button opens app" mappings. */
+    private TextView customBox;
+
+    /**
+     * The custom-mapping dialog while it is open, plus the value boxes of its rows
+     * (indexed exactly like {@link Prefs#getCustomMaps()}, so a learn can address a
+     * row by number). All null while the dialog is closed.
+     */
+    private android.app.AlertDialog customDialog;
+    private java.util.List<TextView> customAppBoxes;
+    private java.util.List<TextView> customButtonBoxes;
+    /** Row container of the open dialog, so a new row can be appended without a rebuild. */
+    private LinearLayout customRowsHost;
+    /**
+     * True while we are dismissing the dialog only because the Activity is going away
+     * (a mapped app destroyed us mid-learn). The dismiss handler then keeps the state
+     * that {@link #onResume} needs to put the dialog back up.
+     */
+    private boolean customDialogTearingDown;
+    /**
+     * The dialog was open when this screen was destroyed, so re-open it once we are
+     * back. Static for the same reason as {@link #sPendingSlot}: it has to survive the
+     * Activity, not just a pause.
+     */
+    private static boolean sCustomDialogOpen;
     /**
      * The box currently in learn mode, or null. While learning we listen for BOTH a
      * keycode (the button sends a key) and an app window (the button opens an Amazon
@@ -86,10 +111,12 @@ public class MainActivity extends Activity {
      * the config screen back to the front. Static and slot-based so it survives this
      * Activity being destroyed by a heavy app (e.g. Prime) and recreated.
      */
-    private static int sPendingSlot = -1;          // SLOT_LAUNCHER / SLOT_AMAZON, or -1
+    private static int sPendingSlot = -1;          // a SLOT_* value, or -1
     private static String sPendingWindow;          // sentinel or "pkg/activity", or null
     private static final int SLOT_LAUNCHER = 0;
     private static final int SLOT_AMAZON = 1;
+    /** Custom mapping N is slot {@code SLOT_CUSTOM_BASE + N}, N being its row index. */
+    private static final int SLOT_CUSTOM_BASE = 100;
 
     /**
      * Shell / navigation surfaces that must never be captured as a mapped button
@@ -112,6 +139,26 @@ public class MainActivity extends Activity {
 
     /** Vertical padding inside every settings row; kept small so more rows fit one screen. */
     private static final int ROW_PAD_V = 8;
+
+    /**
+     * Horizontal padding inside a value box. Deliberately larger than {@link #ROW_PAD_V}:
+     * the vertical padding sits on the text line box, which already carries about 10px of
+     * its own air above the capitals and below the baseline, while the horizontal one sits
+     * right against the glyphs. Equal numbers therefore look unequal; these two measure the
+     * same on screen.
+     */
+    private static final int BOX_PAD_H = 12;
+
+    /**
+     * Fixed width of the button column in the custom-mapping dialog. Unlike the boxes on
+     * the main screen, which are sized by their content, these are stacked on top of each
+     * other and have to line up. Wide enough for the longest text the box can ever show,
+     * which is the "Press a button…" prompt during a learn (~117dp) plus
+     * {@link #BOX_PAD_H} on both sides; every real value is shorter, so the column stays
+     * put while mappings are added. Longer window bindings (an app with a long name) are
+     * ellipsized rather than allowed to break the alignment.
+     */
+    private static final int CUSTOM_BUTTON_COL_W = 144;
 
     /** Tip box at the bottom that shows the description of the focused option. */
     private TextView tipView;
@@ -635,8 +682,8 @@ public class MainActivity extends Activity {
         box.setTextSize(16);
         box.setTextColor(Colors.WHITE);
         box.setGravity(Gravity.CENTER);
-        box.setMinWidth(dp(120));
-        box.setPadding(dp(12), dp(ROW_PAD_V), dp(12), dp(ROW_PAD_V));
+        box.setMinWidth(dp(56));
+        box.setPadding(dp(BOX_PAD_H), dp(ROW_PAD_V), dp(BOX_PAD_H), dp(ROW_PAD_V));
         box.setBackground(getDrawable(R.drawable.target_chip_bg));
         box.setFocusable(true);
         box.setClickable(true);
@@ -770,9 +817,108 @@ public class MainActivity extends Activity {
         amazonBox = addKeyBox(outer, getString(R.string.launch_key_amazon_label),
                 amazonPref(), amazonWinPref(), SLOT_AMAZON, dp(18),
                 R.string.launch_key_amazon_box_tip);
+        customBox = addCustomBox(outer);
 
         updateLaunchKeyBoxState(); // start grayed/unfocusable if the shortcut is off
         content.addView(outer);
+    }
+
+    /**
+     * Third box of the row: everything beyond the two fixed slots. It holds no value of
+     * its own, it opens {@link #showCustomMapsDialog()} and shows how many mappings are
+     * set up (a plus sign while there are none), so the row itself stays one line no
+     * matter how many buttons the user maps.
+     */
+    private TextView addCustomBox(LinearLayout parent) {
+        TextView label = new TextView(this);
+        label.setText(getString(R.string.launch_key_custom_label));
+        label.setTextSize(15);
+        label.setTextColor(Colors.NEUTRAL);
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        labelLp.leftMargin = dp(18);
+        labelLp.rightMargin = dp(6);
+        parent.addView(label, labelLp);
+
+        // Square floor instead of a fixed minimum width: holding nothing but a "+" this
+        // box would otherwise be a wide, flat sliver. It still grows in width once the
+        // app icons go in.
+        final TextView box = new TextView(this) {
+            @Override
+            protected void onMeasure(int widthSpec, int heightSpec) {
+                super.onMeasure(widthSpec, heightSpec);
+                int side = getMeasuredHeight();
+                if (View.MeasureSpec.getMode(widthSpec) == View.MeasureSpec.AT_MOST) {
+                    side = Math.min(side, View.MeasureSpec.getSize(widthSpec));
+                }
+                if (View.MeasureSpec.getMode(widthSpec) != View.MeasureSpec.EXACTLY
+                        && getMeasuredWidth() < side) {
+                    // Measure again at the square width instead of just reporting it: the
+                    // text layout is built inside onMeasure, so overriding the dimension
+                    // afterwards would leave the glyph centred in the old, narrow layout.
+                    super.onMeasure(
+                            View.MeasureSpec.makeMeasureSpec(side, View.MeasureSpec.EXACTLY),
+                            heightSpec);
+                }
+            }
+        };
+        box.setText(customBoxText());
+        box.setTextSize(16);
+        box.setTextColor(Colors.WHITE);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(BOX_PAD_H), dp(ROW_PAD_V), dp(BOX_PAD_H), dp(ROW_PAD_V));
+        box.setBackground(getDrawable(R.drawable.target_chip_bg));
+        box.setFocusable(true);
+        box.setClickable(true);
+        box.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (learningBox == null) showCustomMapsDialog();
+            }
+        });
+        box.setOnKeyListener(new RightNavGuard(null));
+        box.setTag(label); // grayed together with the box when the shortcut is off
+        attachTip(box, getString(R.string.launch_key_custom_box_tip));
+        parent.addView(box);
+        return box;
+    }
+
+    /** Icons shown in the Custom box before the row would get too long for one line. */
+    private static final int CUSTOM_BOX_MAX_ICONS = 5;
+
+    /**
+     * The icons of the mapped apps side by side, or a plus sign while there are none.
+     * Icons rather than a count: they say which apps are behind the box without costing
+     * more width than a number would. Only mappings that actually have a button are
+     * shown, since one without does nothing yet, and past
+     * {@link #CUSTOM_BOX_MAX_ICONS} the rest is summed up as an ellipsis so the row
+     * stays one line however many mappings there are.
+     */
+    private CharSequence customBoxText() {
+        java.util.List<android.graphics.drawable.Drawable> icons = new java.util.ArrayList<>();
+        int mapped = 0;
+        for (CustomMap m : prefs.getCustomMaps()) {
+            if (!m.isActive()) continue;
+            mapped++;
+            if (icons.size() >= CUSTOM_BOX_MAX_ICONS) continue;
+            android.graphics.drawable.Drawable icon = null;
+            try {
+                icon = getPackageManager().getApplicationIcon(m.app);
+            } catch (Exception ignored) { /* uninstalled or icon-less: fall back below */ }
+            if (icon == null) icon = getDrawable(android.R.drawable.sym_def_app_icon);
+            if (icon != null) icons.add(icon);
+        }
+        if (icons.isEmpty()) return getString(R.string.custom_maps_add);
+        CharSequence row = KeyBadges.iconRow(icons);
+        // Separated by the same single space that sits between the icons, otherwise the
+        // ellipsis sticks to the last one.
+        return mapped > icons.size()
+                ? android.text.TextUtils.concat(row, " ", getString(R.string.custom_maps_more))
+                : row;
+    }
+
+    private void updateCustomBox() {
+        if (customBox != null) customBox.setText(customBoxText());
     }
 
     /** IntPref bridge for the target-launcher keycode. */
@@ -807,6 +953,54 @@ public class MainActivity extends Activity {
         };
     }
 
+    /** IntPref bridge for custom mapping {@code index}; a missing row reads as unbound. */
+    private IntPref customKeyPref(final int index) {
+        return new IntPref() {
+            @Override public int get() {
+                CustomMap m = customMap(index);
+                return m == null ? Prefs.DEFAULT_LAUNCH_KEYCODE : m.keyCode;
+            }
+            @Override public void set(int v) {
+                CustomMap m = customMap(index);
+                if (m != null) putCustomMap(index, m.withKeyCode(v));
+            }
+        };
+    }
+
+    /** StrPref bridge for custom mapping {@code index}; a missing row reads as unbound. */
+    private StrPref customWinPref(final int index) {
+        return new StrPref() {
+            @Override public String get() {
+                CustomMap m = customMap(index);
+                return m == null ? Prefs.NO_WINDOW : m.window;
+            }
+            @Override public void set(String v) {
+                CustomMap m = customMap(index);
+                if (m != null) putCustomMap(index, m.withWindow(v));
+            }
+        };
+    }
+
+    /** The stored mapping at {@code index}, or null for the trailing "add another" row. */
+    private CustomMap customMap(int index) {
+        java.util.List<CustomMap> maps = prefs.getCustomMaps();
+        return index >= 0 && index < maps.size() ? maps.get(index) : null;
+    }
+
+    /** Writes one mapping back, appending when {@code index} is one past the end. */
+    private void putCustomMap(int index, CustomMap map) {
+        java.util.List<CustomMap> maps = new java.util.ArrayList<>(prefs.getCustomMaps());
+        if (index == maps.size()) {
+            maps.add(map);
+        } else if (index >= 0 && index < maps.size()) {
+            maps.set(index, map);
+        } else {
+            return;
+        }
+        prefs.setCustomMaps(maps);
+        updateCustomBox();
+    }
+
     /**
      * Builds one "SubLabel [box]" mapping control and appends it to {@code parent}.
      * A slot can be bound to a keycode OR an app window; OK on the box learns
@@ -829,8 +1023,11 @@ public class MainActivity extends Activity {
         box.setTextSize(16);
         box.setTextColor(Colors.WHITE);
         box.setGravity(Gravity.CENTER);
-        box.setMinWidth(dp(104));
-        box.setPadding(dp(12), dp(ROW_PAD_V), dp(12), dp(ROW_PAD_V));
+        // Just a floor so a very short value still reads as a box. Anything wider is
+        // sized by its padding alone; a larger minimum would centre the text in the
+        // leftover space and widen the side gaps beyond BOX_PAD_H again.
+        box.setMinWidth(dp(56));
+        box.setPadding(dp(BOX_PAD_H), dp(ROW_PAD_V), dp(BOX_PAD_H), dp(ROW_PAD_V));
         box.setBackground(getDrawable(R.drawable.target_chip_bg));
         box.setFocusable(true);
         box.setClickable(true);
@@ -855,8 +1052,10 @@ public class MainActivity extends Activity {
     private void updateLaunchKeyBoxState() {
         boolean usable = accessSwitch.isChecked() && prefs.isLaunchKeyEnabled();
         if (!usable && learningBox != null) cancelLearning();
+        if (!usable && customDialog != null) customDialog.dismiss();
         setBoxUsable(launcherBox, usable, launchKeyRow);
         setBoxUsable(amazonBox, usable, launchKeyRow);
+        setBoxUsable(customBox, usable, launchKeyRow);
     }
 
     /**
@@ -934,6 +1133,354 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * The custom mappings, as an overlay dialog so the row behind it stays a single
+     * line. One row per mapping: the app on the left, the button that opens it on the
+     * right, plus one empty row to add another (up to {@link Prefs#MAX_CUSTOM_MAPS}).
+     * Both fields work like the fixed slots: OK sets, a held OK clears.
+     *
+     * Every change is written through immediately, because binding a button that opens
+     * an app (Live TV, Prime, ...) can destroy this screen; rows are only dropped when
+     * the dialog is closed, so an index keeps pointing at the same mapping throughout.
+     */
+    private void showCustomMapsDialog() {
+        sCustomDialogOpen = true;
+        customAppBoxes = new java.util.ArrayList<>();
+        customButtonBoxes = new java.util.ArrayList<>();
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(dp(24), dp(4), dp(24), dp(4));
+        // Sets the dialog width, which the rows then fill; without it the longest app
+        // name would decide how wide the whole thing is.
+        body.setMinimumWidth(dp(560));
+
+        customRowsHost = new LinearLayout(this);
+        customRowsHost.setOrientation(LinearLayout.VERTICAL);
+        // Rows past this height scroll instead of pushing the hint off the screen. A
+        // ScrollView on its own would still report its full content height to the dialog,
+        // so the ceiling has to be imposed here.
+        final int maxRowsHeight = (int) (getResources().getDisplayMetrics().heightPixels * 0.55f);
+        ScrollView rows = new ScrollView(this) {
+            @Override
+            protected void onMeasure(int widthSpec, int heightSpec) {
+                int limit = maxRowsHeight;
+                if (View.MeasureSpec.getMode(heightSpec) != View.MeasureSpec.UNSPECIFIED) {
+                    limit = Math.min(limit, View.MeasureSpec.getSize(heightSpec));
+                }
+                super.onMeasure(widthSpec,
+                        View.MeasureSpec.makeMeasureSpec(limit, View.MeasureSpec.AT_MOST));
+            }
+        };
+        rows.addView(customRowsHost, new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        body.addView(rows, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        int stored = prefs.getCustomMaps().size();
+        for (int i = 0; i < stored; i++) {
+            addCustomRow(i);
+        }
+        if (stored < Prefs.MAX_CUSTOM_MAPS) addCustomRow(stored); // the "add another" row
+
+        TextView hint = new TextView(this);
+        hint.setText(badgeKeys(getString(R.string.custom_maps_hint)));
+        hint.setTextSize(14);
+        hint.setTextColor(Colors.NEUTRAL);
+        hint.setPadding(dp(2), dp(14), dp(2), dp(2));
+        // Same cap as the body's minimum, so this text wraps into the dialog instead of
+        // stretching it to whatever fits on one line.
+        hint.setMaxWidth(dp(560));
+        body.addView(hint, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this,
+                R.style.AppDialogTheme)
+                .setIcon(R.drawable.ic_logo)
+                .setTitle(R.string.custom_maps_title)
+                .setView(body)
+                .create();
+        dialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(android.content.DialogInterface d) {
+                onCustomDialogDismissed();
+            }
+        });
+        customDialog = dialog;
+        dialog.show();
+        focusFirstFreeCustomRow();
+    }
+
+    /**
+     * Opens on the first row that still needs an app, which is the empty one at the
+     * bottom in the common case, so adding another mapping is a straight "OK". Posted
+     * because the dialog hands initial focus to its first focusable during layout, and
+     * that would otherwise win.
+     */
+    private void focusFirstFreeCustomRow() {
+        if (customAppBoxes == null || customAppBoxes.isEmpty()) return;
+        int wanted = customAppBoxes.size() - 1; // all rows filled: land on the last one
+        for (int i = 0; i < customAppBoxes.size(); i++) {
+            if (customApp(i).isEmpty()) {
+                wanted = i;
+                break;
+            }
+        }
+        final TextView box = customAppBoxes.get(wanted);
+        box.post(new Runnable() {
+            @Override
+            public void run() {
+                box.requestFocus();
+            }
+        });
+    }
+
+    /**
+     * Closing the dialog is what commits the "a row without an app is gone" rule.
+     * Skipped while the Activity itself is being torn down mid-learn: there the dialog
+     * only disappears with the window and has to come back in {@link #onResume}.
+     */
+    private void onCustomDialogDismissed() {
+        customDialog = null;
+        customRowsHost = null;
+        customAppBoxes = null;
+        customButtonBoxes = null;
+        if (customDialogTearingDown) {
+            customDialogTearingDown = false;
+            // Only an unfinished learn justifies re-opening; without one the user left
+            // the screen on purpose and should not be dropped back into the dialog.
+            sCustomDialogOpen = learningBox != null || sPendingSlot >= 0;
+            return;
+        }
+        sCustomDialogOpen = false;
+        cancelLearning();
+        pruneCustomMaps();
+        updateCustomBox();
+    }
+
+    /** Drops the rows the user left without an app. */
+    private void pruneCustomMaps() {
+        java.util.List<CustomMap> stored = prefs.getCustomMaps();
+        java.util.List<CustomMap> keep = new java.util.ArrayList<>(stored.size());
+        for (CustomMap m : stored) {
+            if (!m.app.isEmpty()) keep.add(m);
+        }
+        if (keep.size() != stored.size()) prefs.setCustomMaps(keep);
+    }
+
+    /**
+     * Appends one dialog row. {@code index} is the position in the stored list, and one
+     * past its end for the trailing "add another" row, which only becomes a real mapping
+     * once an app is picked for it.
+     */
+    private void addCustomRow(final int index) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(4), 0, dp(4));
+
+        final TextView appBox = new TextView(this);
+        appBox.setTextSize(16);
+        appBox.setTextColor(Colors.WHITE);
+        appBox.setGravity(Gravity.CENTER_VERTICAL);
+        appBox.setPadding(dp(BOX_PAD_H), dp(ROW_PAD_V), dp(BOX_PAD_H), dp(ROW_PAD_V));
+        appBox.setBackground(getDrawable(R.drawable.target_chip_bg));
+        appBox.setFocusable(true);
+        appBox.setClickable(true);
+        appBox.setSingleLine(true);
+        appBox.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        applyCustomAppBox(appBox, customApp(index));
+        appBox.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (learningBox == null) pickCustomApp(index);
+            }
+        });
+        appBox.setOnKeyListener(new CustomAppBoxListener(index));
+
+        final TextView buttonBox = new TextView(this);
+        buttonBox.setText(boxText(customKeyPref(index), customWinPref(index)));
+        buttonBox.setTextSize(16);
+        buttonBox.setTextColor(Colors.WHITE);
+        buttonBox.setGravity(Gravity.CENTER);
+        buttonBox.setMinWidth(dp(CUSTOM_BUTTON_COL_W));
+        buttonBox.setMaxWidth(dp(CUSTOM_BUTTON_COL_W));
+        buttonBox.setSingleLine(true);
+        buttonBox.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        buttonBox.setPadding(dp(BOX_PAD_H), dp(ROW_PAD_V), dp(BOX_PAD_H), dp(ROW_PAD_V));
+        buttonBox.setBackground(getDrawable(R.drawable.target_chip_bg));
+        buttonBox.setFocusable(true);
+        buttonBox.setClickable(true);
+        buttonBox.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (learningBox == null) {
+                    startLearning(buttonBox, customKeyPref(index), customWinPref(index),
+                            SLOT_CUSTOM_BASE + index);
+                }
+            }
+        });
+        buttonBox.setOnKeyListener(new KeyBoxListener(buttonBox,
+                customKeyPref(index), customWinPref(index)));
+
+        LinearLayout.LayoutParams appLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        row.addView(appBox, appLp);
+        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        buttonLp.leftMargin = dp(12);
+        row.addView(buttonBox, buttonLp);
+
+        // Full dialog width, so the weighted app field actually has room to stretch into.
+        customRowsHost.addView(row, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        customAppBoxes.add(appBox);
+        customButtonBoxes.add(buttonBox);
+        updateCustomRowUsable(index);
+    }
+
+    /** Package of custom mapping {@code index}, or "" for the trailing "add another" row. */
+    private String customApp(int index) {
+        CustomMap m = customMap(index);
+        return m == null ? "" : m.app;
+    }
+
+    /** Shows an app in a row's left field: its icon and name, or the "pick one" prompt. */
+    private void applyCustomAppBox(TextView box, String pkg) {
+        android.graphics.drawable.Drawable icon = null;
+        CharSequence text;
+        if (pkg == null || pkg.isEmpty()) {
+            text = getString(R.string.custom_maps_pick_app);
+        } else {
+            try {
+                android.content.pm.PackageManager pm = getPackageManager();
+                android.content.pm.ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                CharSequence label = pm.getApplicationLabel(ai);
+                text = label != null ? label : pkg;
+                try {
+                    icon = pm.getApplicationIcon(ai);
+                } catch (Exception ignored) { /* icon optional */ }
+            } catch (Exception e) {
+                text = pkg + getString(R.string.target_not_installed_suffix);
+            }
+        }
+        if (icon != null) icon.setBounds(0, 0, dp(24), dp(24));
+        box.setCompoundDrawables(icon, null, null, null);
+        box.setCompoundDrawablePadding(icon != null ? dp(10) : 0);
+        box.setText(text);
+    }
+
+    /**
+     * The button field only becomes usable once the row has an app: a button without one
+     * would have nothing to open, and every learn needs a stored row to write itself into.
+     */
+    private void updateCustomRowUsable(int index) {
+        if (customButtonBoxes == null || index >= customButtonBoxes.size()) return;
+        setBoxUsable(customButtonBoxes.get(index), !customApp(index).isEmpty(),
+                customAppBoxes.get(index));
+    }
+
+    private void pickCustomApp(final int index) {
+        AppPicker.show(this, getString(R.string.custom_maps_pick_title), new AppPicker.OnPicked() {
+            @Override
+            public void onPicked(String pkg) {
+                setCustomApp(index, pkg);
+            }
+        });
+    }
+
+    /** Stores the picked app and, if this was the last row, offers one more. */
+    private void setCustomApp(int index, String pkg) {
+        CustomMap m = customMap(index);
+        putCustomMap(index, m == null
+                ? new CustomMap(pkg, Prefs.DEFAULT_LAUNCH_KEYCODE, Prefs.NO_WINDOW)
+                : m.withApp(pkg));
+        if (customAppBoxes == null || index >= customAppBoxes.size()) return;
+        applyCustomAppBox(customAppBoxes.get(index), pkg);
+        updateCustomRowUsable(index);
+        if (index == customAppBoxes.size() - 1 && customAppBoxes.size() < Prefs.MAX_CUSTOM_MAPS) {
+            addCustomRow(index + 1);
+        }
+    }
+
+    /**
+     * Hold OK on the app field: empties it. The row itself stays visible (and keeps its
+     * position, so an in-flight learn still lands where it should) until the dialog closes.
+     */
+    private void clearCustomApp(int index) {
+        CustomMap m = customMap(index);
+        if (m == null || m.app.isEmpty()) return;
+        putCustomMap(index, m.withApp(""));
+        if (customAppBoxes == null || index >= customAppBoxes.size()) return;
+        applyCustomAppBox(customAppBoxes.get(index), "");
+        updateCustomRowUsable(index);
+        Toast.makeText(this, R.string.custom_maps_row_cleared, Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * OK on a row's app field opens the picker (via the click listener), a held OK
+     * empties it. Same shape as {@link PickerLongPressListener}: return false on the
+     * OK DOWN so the framework still tracks long-press and click.
+     */
+    private class CustomAppBoxListener implements View.OnKeyListener {
+        private final int index;
+        private boolean longPressTriggered = false;
+
+        CustomAppBoxListener(int index) {
+            this.index = index;
+        }
+
+        @Override
+        public boolean onKey(View v, int keyCode, android.view.KeyEvent event) {
+            boolean isOkKey = keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER
+                    || keyCode == android.view.KeyEvent.KEYCODE_ENTER;
+            if (!isOkKey || learningBox != null) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                if (event.getRepeatCount() == 0) longPressTriggered = false;
+                if (event.isLongPress()) {
+                    longPressTriggered = true;
+                    clearCustomApp(index);
+                }
+                return false; // let the framework track the press (long-press + click)
+            }
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP && longPressTriggered) {
+                longPressTriggered = false;
+                return true; // swallow the click that would otherwise open the picker
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Name of whatever already uses this button, or null when it is free. Bindings are
+     * refused rather than silently taken over: two slots on one button would leave the
+     * loser looking broken. {@code slot} is the one being assigned, so it never
+     * conflicts with itself.
+     */
+    private CharSequence buttonInUseBy(int keyCode, String window, int slot) {
+        if (slot != SLOT_LAUNCHER
+                && sameButton(keyCode, window, prefs.getLaunchKeycode(), prefs.getLaunchWindow())) {
+            return getString(R.string.launch_key_launcher_name);
+        }
+        if (slot != SLOT_AMAZON
+                && sameButton(keyCode, window, prefs.getAmazonKeycode(), prefs.getAmazonWindow())) {
+            return getString(R.string.launch_key_amazon_name);
+        }
+        java.util.List<CustomMap> maps = prefs.getCustomMaps();
+        for (int i = 0; i < maps.size(); i++) {
+            CustomMap m = maps.get(i);
+            if (slot == SLOT_CUSTOM_BASE + i || m.app.isEmpty()) continue;
+            if (sameButton(keyCode, window, m.keyCode, m.window)) return appLabel(m.app);
+        }
+        return null;
+    }
+
+    /** True when two bindings mean the same physical button (same key code or same window). */
+    private static boolean sameButton(int keyA, String windowA, int keyB, String windowB) {
+        if (keyA != Prefs.DEFAULT_LAUNCH_KEYCODE && keyA == keyB) return true;
+        return windowA != null && !windowA.isEmpty() && windowA.equals(windowB);
+    }
+
     /** Hold OK on a box: clear both bindings for that slot back to None. */
     private void resetKey(TextView box, IntPref keyPref, StrPref winPref) {
         keyPref.set(Prefs.DEFAULT_LAUNCH_KEYCODE);
@@ -964,6 +1511,13 @@ public class MainActivity extends Activity {
                 learningBox = null;
                 learningKeyPref = null;
                 learningWinPref = null;
+                CharSequence owner = buttonInUseBy(keyCode, Prefs.NO_WINDOW, slot);
+                if (owner != null) {
+                    Toast.makeText(MainActivity.this,
+                            getString(R.string.map_button_in_use, owner), Toast.LENGTH_LONG).show();
+                    box.setText(boxText(keyPref, winPref));
+                    return;
+                }
                 keyPref.set(keyCode);
                 winPref.set(Prefs.NO_WINDOW); // a slot is key OR window, never both
                 box.setText(boxText(keyPref, winPref));
@@ -1050,12 +1604,41 @@ public class MainActivity extends Activity {
         final String win = sPendingWindow;
         sPendingSlot = -1;
         sPendingWindow = null;
-        final TextView box = (slot == SLOT_LAUNCHER) ? launcherBox : amazonBox;
-        final IntPref keyPref = (slot == SLOT_LAUNCHER) ? launcherPref() : amazonPref();
-        final StrPref winPref = (slot == SLOT_LAUNCHER) ? launcherWinPref() : amazonWinPref();
+        final int customIndex = slot >= SLOT_CUSTOM_BASE ? slot - SLOT_CUSTOM_BASE : -1;
+        final TextView box;
+        final IntPref keyPref;
+        final StrPref winPref;
+        if (customIndex >= 0) {
+            // Only reachable with the dialog up; onResume re-opens it before we get here.
+            if (customButtonBoxes == null || customIndex >= customButtonBoxes.size()) return;
+            box = customButtonBoxes.get(customIndex);
+            keyPref = customKeyPref(customIndex);
+            winPref = customWinPref(customIndex);
+        } else {
+            box = (slot == SLOT_LAUNCHER) ? launcherBox : amazonBox;
+            keyPref = (slot == SLOT_LAUNCHER) ? launcherPref() : amazonPref();
+            winPref = (slot == SLOT_LAUNCHER) ? launcherWinPref() : amazonWinPref();
+        }
         if (box == null) return;
 
         final String pkg = win.contains("/") ? win.substring(0, win.indexOf('/')) : win;
+        // Binding the button that already opens this mapping's own app would be a
+        // redirect from an app to itself.
+        if (customIndex >= 0 && pkg.equals(customApp(customIndex))) {
+            Toast.makeText(this, R.string.map_button_is_same_app, Toast.LENGTH_LONG).show();
+            box.setText(boxText(keyPref, winPref));
+            return;
+        }
+        CharSequence owner = buttonInUseBy(Prefs.DEFAULT_LAUNCH_KEYCODE, win, slot);
+        if (owner != null) {
+            Toast.makeText(this, getString(R.string.map_button_in_use, owner),
+                    Toast.LENGTH_LONG).show();
+            box.setText(boxText(keyPref, winPref));
+            return;
+        }
+        // Back to the stored value: the learn is over, and declining the warning below
+        // would otherwise leave the box stuck on its "Press a button…" prompt.
+        box.setText(boxText(keyPref, winPref));
         // The Apps grid is a shell surface, not content, so it skips the warning below.
         // Matched by package: its window class varies (often a bare FrameLayout).
         boolean isAppsGrid = pkg.equals(APPS_GRID_PKG);
@@ -1460,7 +2043,7 @@ public class MainActivity extends Activity {
             if (accessRow != null) pair.setNextFocusUpId(accessRow.getId());
             if (launchKeyRow != null) pair.setNextFocusDownId(launchKeyRow.getId());
         }
-        for (TextView box : new TextView[]{launcherBox, amazonBox}) {
+        for (TextView box : new TextView[]{launcherBox, amazonBox, customBox}) {
             if (box == null) continue;
             if (hijackRow != null) box.setNextFocusUpId(hijackRow.getId());
             if (bootRow != null) box.setNextFocusDownId(bootRow.getId());
@@ -1596,9 +2179,27 @@ public class MainActivity extends Activity {
         // State (target package, accessibility status, ...) might have
         // changed while this activity was paused, e.g. via the picker.
         refresh();
+        // A mapped app can destroy this screen mid-learn; put the custom dialog back
+        // first, so the row that started the learn exists again before we bind into it.
+        if (sCustomDialogOpen && customDialog == null) {
+            if (prefs.isLaunchKeyEnabled()) showCustomMapsDialog();
+            else sCustomDialogOpen = false; // feature switched off meanwhile
+        }
         // If a branded button was learned while we were backgrounded, finish it now
         // that we're front again (this is also where the content-app warning shows).
         processPendingLearn();
+    }
+
+    @Override
+    protected void onDestroy() {
+        // Dismiss rather than leak the window. The teardown flag keeps the dismiss
+        // handler from applying the "closed by the user" rules (dropping app-less rows,
+        // cancelling the learn), because this screen is coming straight back.
+        if (customDialog != null) {
+            customDialogTearingDown = true;
+            customDialog.dismiss();
+        }
+        super.onDestroy();
     }
 
     @Override
@@ -1611,10 +2212,10 @@ public class MainActivity extends Activity {
         // launcher, meaning the user bailed via Home), or by onDestroy.
     }
 
-    // No onDestroy learn-cancel on purpose: pressing a branded button opens its app and
-    // may stop/destroy this screen right before its window arrives, so cancelling here
-    // would drop the very capture we want. An armed learn instead ends when a window
-    // actually arrives (captured, or ignored if it is a shell/leaving surface).
+    // onDestroy deliberately does not cancel a learn either: pressing a branded button
+    // opens its app and may stop/destroy this screen right before its window arrives, so
+    // cancelling there would drop the very capture we want. An armed learn instead ends
+    // when a window actually arrives (captured, or ignored if it is a shell/leaving surface).
 
     /** Builds the persistent brand-colored title bar with logo, name and info button. */
     private LinearLayout buildTopBar() {
@@ -1775,6 +2376,7 @@ public class MainActivity extends Activity {
         refreshTargetRow();
         refreshSwitches();
         updateDependentSwitches();
+        updateCustomBox(); // an app behind a mapping may have been installed or removed
     }
 
     /**

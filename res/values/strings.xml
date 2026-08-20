@@ -54,13 +54,30 @@
     <string name="launch_key_label">Map custom buttons</string>
     <string name="launch_key_launcher_label">Launcher:</string>
     <string name="launch_key_amazon_label">Amazon Home:</string>
-    <string name="launch_key_tip">Map spare remote buttons: one opens your target launcher, one jumps to the Amazon home screen. Turn on, select a box and press ◉ OK, then press the button you want; hold ◉ OK to reset. Buttons that send their own key (● ● ● ●, number keys, channel up/down, subtitles, teletext, media keys ⏪ ⏵ ⏩) are mapped directly. Buttons that instead open an Amazon app (⊞ Apps, 📺 Live TV, and similar) are redirected, not mapped: pressing one still opens its Amazon app for a moment before Home on Fire forwards you to your launcher, so it reacts a little slower and may flash briefly. A redirected button is shown with the app it opens.</string>
-    <string name="launch_key_tip_fos7">Map spare remote buttons: one opens your target launcher, one jumps to the Amazon home screen. Turn on, select a box and press ◉ OK, then press the button you want; hold ◉ OK to reset. Buttons that send their own key (● ● ● ●, number keys, channel up/down, subtitles, teletext, media keys ⏪ ⏵ ⏩) are mapped directly and open instantly, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds. Buttons that instead open an Amazon app (⊞ Apps, 📺 Live TV, and similar) are redirected, not mapped: pressing one still opens its Amazon app for a moment before Home on Fire forwards you to your launcher, so it reacts a little slower and may flash briefly. A redirected button is shown with the app it opens.</string>
+    <string name="launch_key_tip">Map spare remote buttons: one opens your target launcher, one jumps to the Amazon home screen. Turn on, select a box and press ◉ OK, then press the button you want; hold ◉ OK to reset. Buttons that send their own key (● ● ● ●, number keys, channel up/down, subtitles, teletext, media keys ⏪ ⏵ ⏩) are mapped directly. Buttons that instead open an Amazon app (⊞ Apps, 📺 Live TV, and similar) are redirected, not mapped: pressing one still opens its Amazon app for a moment before Home on Fire forwards you to your launcher, so it reacts a little slower and may flash briefly. A redirected button is shown with the app it opens. Custom: takes further buttons, each one opening an app of your choice.</string>
+    <string name="launch_key_tip_fos7">Map spare remote buttons: one opens your target launcher, one jumps to the Amazon home screen. Turn on, select a box and press ◉ OK, then press the button you want; hold ◉ OK to reset. Buttons that send their own key (● ● ● ●, number keys, channel up/down, subtitles, teletext, media keys ⏪ ⏵ ⏩) are mapped directly and open instantly, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds. Buttons that instead open an Amazon app (⊞ Apps, 📺 Live TV, and similar) are redirected, not mapped: pressing one still opens its Amazon app for a moment before Home on Fire forwards you to your launcher, so it reacts a little slower and may flash briefly. A redirected button is shown with the app it opens. Custom: takes further buttons, each one opening an app of your choice.</string>
     <string name="launch_key_launcher_box_tip">Press ◉ OK to bind a remote button that opens your target launcher directly (↩ Back cancels); hold ◉ OK to reset.</string>
     <string name="launch_key_amazon_box_tip">Press ◉ OK to bind a remote button that jumps to the Amazon home screen (↩ Back cancels); hold ◉ OK to reset.</string>
     <string name="launch_key_none">None</string>
     <string name="launch_key_learning">Press a button…</string>
     <string name="launch_key_cleared">Button mapping reset</string>
+    <!-- Plain slot names, used when a binding collides with one that already exists. -->
+    <string name="launch_key_launcher_name">Launcher</string>
+    <string name="launch_key_amazon_name">Amazon Home</string>
+    <string name="map_button_in_use">That button is already mapped to %1$s.</string>
+    <string name="map_button_is_same_app">That button already opens this app.</string>
+
+    <!-- Custom mappings: any button opens any installed app, edited in their own dialog. -->
+    <string name="launch_key_custom_label">Custom:</string>
+    <string name="launch_key_custom_box_tip">Opens a dialog where further buttons can be mapped, each one to an app of your choice.</string>
+    <string name="custom_maps_add">+</string>
+    <!-- Appended to the icons in the Custom box when more mappings exist than fit. -->
+    <string name="custom_maps_more">…</string>
+    <string name="custom_maps_title">Custom button mappings</string>
+    <string name="custom_maps_pick_title">Open which app?</string>
+    <string name="custom_maps_pick_app">Choose an app…</string>
+    <string name="custom_maps_row_cleared">App cleared</string>
+    <string name="custom_maps_hint">Press ◉ OK on a field to set it, hold ◉ OK to clear it. Choose the app first, then the button that should open it. A row without a button is kept but does nothing; a row without an app disappears when you close this dialog with ↩ Back.</string>
 
     <!-- Beta universal redirect: learn branded buttons (Apps, Live TV, ...) that send no keycode. -->
     <string name="redirect_learn_added">Mapped %1$s</string>

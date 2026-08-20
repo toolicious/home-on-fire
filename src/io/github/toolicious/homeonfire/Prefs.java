@@ -5,6 +5,9 @@ package io.github.toolicious.homeonfire;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.Collections;
+import java.util.List;
+
 /**
  * Thin wrapper around SharedPreferences holding the user choices:
  *  - target package: which app to launch in place of the Amazon launcher
@@ -12,6 +15,7 @@ import android.content.SharedPreferences;
  *  - launch on boot: start the target app once at device boot
  *  - menu long-press: open our config screen on a held Menu key
  *  - verbose logging: extra logcat output for debugging the hijack
+ *  - custom mappings: extra "this button opens that app" pairs
  */
 public class Prefs {
 
@@ -226,6 +230,42 @@ public class Prefs {
 
     public void setAmazonWindow(String pkgActivity) {
         sp.edit().putString(KEY_AMAZON_WINDOW, pkgActivity).apply();
+    }
+
+    /**
+     * User-defined mappings beyond the two fixed slots: any button opens any installed
+     * app. Serialized by {@link CustomMap}; see there for the line format.
+     */
+    private static final String KEY_CUSTOM_MAPS = "custom_maps";
+
+    /**
+     * Upper bound on custom mappings. Not a layout constraint (the dialog scrolls and
+     * the row behind it summarises with an ellipsis), just a sanity limit: a remote has
+     * nowhere near this many spare buttons, so hitting it means something went wrong.
+     */
+    public static final int MAX_CUSTOM_MAPS = 20;
+
+    /** Raw string {@link #customCache} was parsed from, so we only re-parse after a change. */
+    private String customRaw;
+    private List<CustomMap> customCache = Collections.emptyList();
+
+    /**
+     * The custom mappings in stored order. Read on every key event, hence the cache:
+     * SharedPreferences serves the string from memory, and re-parsing only happens
+     * when that string actually changed. The returned list is immutable; build a new
+     * one and hand it to {@link #setCustomMaps} to change anything.
+     */
+    public List<CustomMap> getCustomMaps() {
+        String raw = sp.getString(KEY_CUSTOM_MAPS, "");
+        if (!raw.equals(customRaw)) {
+            customCache = Collections.unmodifiableList(CustomMap.parse(raw));
+            customRaw = raw;
+        }
+        return customCache;
+    }
+
+    public void setCustomMaps(List<CustomMap> maps) {
+        sp.edit().putString(KEY_CUSTOM_MAPS, CustomMap.serialize(maps)).apply();
     }
 
     /**

@@ -130,6 +130,25 @@ public final class KeyBadges {
     }
 
     /**
+     * A row of icons drawn inline, side by side, with no keycap and no label. Used by
+     * the Custom box to show the app icons of the mappings behind it instead of a
+     * number. Sized like the surrounding text, so the row it sits in keeps its height.
+     */
+    public static CharSequence iconRow(java.util.List<Drawable> icons) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < icons.size(); i++) {
+            sb.append(i == 0 ? "￼" : " ￼"); // one placeholder per icon, spaced apart
+        }
+        SpannableString ss = new SpannableString(sb);
+        for (int i = 0; i < icons.size(); i++) {
+            int at = i * 2; // placeholder + separating space
+            ss.setSpan(new KeyBadgeSpan(0, 0, 0, Colors.NEUTRAL, icons.get(i), null, 0, false),
+                    at, at + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return ss;
+    }
+
+    /**
      * Inline "colored circle + label", used to show a bound color button in the
      * value box, e.g. a red dot followed by "Red". {@code colorIndex} indexes
      * {@link #DOT_COLORS} (0=red, 1=green, 2=yellow, 3=blue), the same palette as
@@ -197,6 +216,17 @@ public final class KeyBadges {
         @Override
         public int getSize(Paint paint, CharSequence text, int start, int end,
                            Paint.FontMetricsInt fm) {
+            if (fm != null) {
+                // Hand back the font's own metrics. A line consisting ONLY of these spans
+                // (a value box showing a single icon) would otherwise be left with no
+                // metrics at all and collapse to zero height.
+                Paint.FontMetricsInt fontMetrics = paint.getFontMetricsInt();
+                fm.top = fontMetrics.top;
+                fm.ascent = fontMetrics.ascent;
+                fm.descent = fontMetrics.descent;
+                fm.bottom = fontMetrics.bottom;
+                fm.leading = fontMetrics.leading;
+            }
             return (int) Math.ceil(contentWidth(paint, text, start, end) + hpad() * 2);
         }
 
