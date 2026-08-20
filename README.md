@@ -190,6 +190,11 @@ focus anything, take Path B.
 
 ### Path A: install without ADB
 
+> [!IMPORTANT]
+> This only works if your Fire OS build still has a working
+> **Settings → Accessibility** page with a toggle for the service. If that page
+> is blank or you cannot focus anything, use [Path B](#path-b-install-via-adb).
+
 1. **Download the APK** on your computer or phone:
    `home-on-fire.apk` from the GitHub release page.
 2. **Move the APK to the Fire TV.** Two common ways:
