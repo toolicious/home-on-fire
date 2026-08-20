@@ -2012,28 +2012,28 @@ public class MainActivity extends Activity {
         View accessRow = rowOf(accessSwitch);
         View bootRow = rowOf(bootSwitch);
         View menuRow = rowOf(menuLpSwitch);
-        ensureId(accessRow);
-        ensureId(bootRow);
-        ensureId(menuRow);
-        ensureId(hijackRow);
-        ensureId(launchKeyRow);
-        if (launchBtn != null && accessRow != null) {
-            launchBtn.setNextFocusDownId(accessRow.getId());
-        }
-        // Pin the map-custom-buttons switch-row into the row chain so d-pad UP/DOWN
-        // never lands on (or skips past) the two value boxes beside it; the boxes
-        // are reached only via RIGHT. The row directly above it is Replace Home.
         ensureId(escapeLongPair);
         ensureId(escapeDoublePair);
-        if (launchKeyRow != null) {
-            if (hijackRow != null) {
-                hijackRow.setNextFocusDownId(launchKeyRow.getId());
-                launchKeyRow.setNextFocusUpId(hijackRow.getId());
-            }
-            if (bootRow != null) {
-                bootRow.setNextFocusUpId(launchKeyRow.getId());
-                launchKeyRow.setNextFocusDownId(bootRow.getId());
-            }
+        // The settings rows form one column on the left, with every right-hand control
+        // hanging off the row it belongs to. That column is wired in BOTH directions,
+        // because the rows are MATCH_PARENT wide: a focus search downwards has every
+        // control below inside its beam and then picks purely by weighted distance,
+        // which lets a value box or an escape switch one line further down beat the row
+        // directly underneath. The right-hand controls stay reachable via RIGHT.
+        View[] column = {initialFocus, accessRow, hijackRow, launchKeyRow, bootRow, menuRow,
+                verboseRow};
+        for (View v : column) {
+            ensureId(v);
+        }
+        for (int i = 0; i + 1 < column.length; i++) {
+            View above = column[i];
+            View below = column[i + 1];
+            if (above == null || below == null) continue;
+            above.setNextFocusDownId(below.getId());
+            below.setNextFocusUpId(above.getId());
+        }
+        if (launchBtn != null && accessRow != null) {
+            launchBtn.setNextFocusDownId(accessRow.getId());
         }
         // The escape switches sit on the Replace-Home row and are reached with RIGHT,
         // exactly like the loading-cover box; UP/DOWN leaves the row to its neighbours
