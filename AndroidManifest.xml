@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     package="io.github.toolicious.homeonfire"
-    android:versionCode="125"
-    android:versionName="1.4.0-dev05">
+    android:versionCode="126"
+    android:versionName="1.5.0">
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
