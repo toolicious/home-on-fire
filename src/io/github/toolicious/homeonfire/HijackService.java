@@ -380,6 +380,13 @@ public class HijackService extends AccessibilityService {
     private static final long DUPLICATE_EVENT_GUARD_MS = 300L;
 
     /**
+     * How long after a window-triggered redirect an arrival on the branded surface still
+     * counts as that launch chain (Prime opens further activities right after) instead of
+     * the user coming back out of the app we opened.
+     */
+    private static final long LAUNCH_CHAIN_MS = 3_000L;
+
+    /**
      * Wall-clock deadline (System.currentTimeMillis()) until which the
      * hijack is suspended. Set by {@link #requestBypass} only. The
      * double-press path does NOT set a lingering bypass; the next Home
@@ -389,6 +396,11 @@ public class HijackService extends AccessibilityService {
 
     /** Wall-clock time of the most recent hijack we performed. */
     private long lastHijackAt = 0L;
+
+    /** The re-assert scheduled by the last window-triggered redirect, so a new one can cancel it. */
+    private Runnable pendingReassert = null;
+    /** When that redirect ran, to tell its launch chain from a later return by the user. */
+    private long lastWindowLaunchAt = 0L;
 
     /**
      * Wall-clock time and code of the most recent key event we saw,
@@ -916,22 +928,46 @@ public class HijackService extends AccessibilityService {
             }
             return;
         }
-        launchTarget(appToLaunch, reason, false);
+        // Leaving the app this button opens drops the user back onto the branded surface
+        // that opened it, and redirecting again would lock them inside that app with no
+        // way out. The surface only moves the foreground trackers when it reports a real
+        // content class, so the app they came from is in one tracker or the other.
+        String cameFrom = brandedPkg != null && brandedPkg.equals(currentForegroundPkg)
+                ? previousForegroundPkg
+                : currentForegroundPkg;
+        if (appToLaunch.equals(cameFrom) && now - lastWindowLaunchAt >= LAUNCH_CHAIN_MS) {
+            String target = prefs.getTargetPackage();
+            if (target == null || target.isEmpty()) {
+                if (prefs.isVerboseLogging()) {
+                    Log.i(TAG, "windowLaunch skip: back out of " + appToLaunch + ", no target set");
+                }
+                return;
+            }
+            launchTarget(target, "Back out of " + appToLaunch + " onto " + brandedPkg
+                    + ", going to the target", false);
+            return;
+        }
+        // Nothing to re-assert after a launch that never happened (target uninstalled).
+        if (!launchTarget(appToLaunch, reason, false)) return;
+        lastWindowLaunchAt = now;
         // Some branded apps keep launching activities that re-cover the target right
         // after (e.g. Prime: DeepLinkRouting then Landing). Re-assert the target ONLY if
         // that same branded app is what came back to the front, so we win the launch-chain
         // race without yanking the user back if they deliberately navigated elsewhere in
         // the meantime (or if the redirect was already clean and the target is up).
         if (mainHandler != null && brandedPkg != null) {
-            final Runnable reassert = new Runnable() {
+            // Drop the previous press's re-asserts: they aim at an older branded package
+            // and target, and letting both sets run stacks launches on a slow device.
+            if (pendingReassert != null) mainHandler.removeCallbacks(pendingReassert);
+            pendingReassert = new Runnable() {
                 @Override public void run() {
                     if (brandedPkg.equals(currentForegroundPkg)) {
                         launchTarget(appToLaunch, "Redirect re-assert", false);
                     }
                 }
             };
-            mainHandler.postDelayed(reassert, 700);
-            mainHandler.postDelayed(reassert, 1500);
+            mainHandler.postDelayed(pendingReassert, 700);
+            mainHandler.postDelayed(pendingReassert, 1500);
         }
     }
 

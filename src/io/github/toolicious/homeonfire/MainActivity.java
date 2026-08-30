@@ -83,6 +83,8 @@ public class MainActivity extends Activity {
     private java.util.List<TextView> customButtonBoxes;
     /** Row container of the open dialog, so a new row can be appended without a rebuild. */
     private LinearLayout customRowsHost;
+    /** The content-app warning while it is up, so a second resume cannot stack another one. */
+    private android.app.AlertDialog warnDialog;
     /**
      * True while we are dismissing the dialog only because the Activity is going away
      * (a mapped app destroyed us mid-learn). The dismiss handler then keeps the state
@@ -117,6 +119,15 @@ public class MainActivity extends Activity {
     private static final int SLOT_AMAZON = 1;
     /** Custom mapping N is slot {@code SLOT_CUSTOM_BASE + N}, N being its row index. */
     private static final int SLOT_CUSTOM_BASE = 100;
+
+    /**
+     * An unanswered content-app warning. Kept apart from {@link #sPendingSlot} because it
+     * outlives the learn: the app whose button was pressed usually comes back to the front
+     * once more and takes this screen, and with it the dialog, down. The question then has
+     * to be asked again instead of being dropped.
+     */
+    private static int sPendingWarnSlot = -1;
+    private static String sPendingWarnWindow;
 
     /**
      * Shell / navigation surfaces that must never be captured as a mapped button
@@ -1249,11 +1260,15 @@ public class MainActivity extends Activity {
             customDialogTearingDown = false;
             // Only an unfinished learn justifies re-opening; without one the user left
             // the screen on purpose and should not be dropped back into the dialog.
-            sCustomDialogOpen = learningBox != null || sPendingSlot >= 0;
+            sCustomDialogOpen = learningBox != null || sPendingSlot >= 0
+                    || sPendingWarnSlot >= SLOT_CUSTOM_BASE;
             return;
         }
         sCustomDialogOpen = false;
         cancelLearning();
+        // A warning about one of these rows dies with the dialog the user just closed.
+        // Keeping it would ask the question again the next time they open the dialog.
+        if (sPendingWarnSlot >= SLOT_CUSTOM_BASE) clearPendingWarn();
         pruneCustomMaps();
         updateCustomBox();
     }
@@ -1604,66 +1619,133 @@ public class MainActivity extends Activity {
         final String win = sPendingWindow;
         sPendingSlot = -1;
         sPendingWindow = null;
-        final int customIndex = slot >= SLOT_CUSTOM_BASE ? slot - SLOT_CUSTOM_BASE : -1;
-        final TextView box;
-        final IntPref keyPref;
-        final StrPref winPref;
-        if (customIndex >= 0) {
-            // Only reachable with the dialog up; onResume re-opens it before we get here.
-            if (customButtonBoxes == null || customIndex >= customButtonBoxes.size()) return;
-            box = customButtonBoxes.get(customIndex);
-            keyPref = customKeyPref(customIndex);
-            winPref = customWinPref(customIndex);
-        } else {
-            box = (slot == SLOT_LAUNCHER) ? launcherBox : amazonBox;
-            keyPref = (slot == SLOT_LAUNCHER) ? launcherPref() : amazonPref();
-            winPref = (slot == SLOT_LAUNCHER) ? launcherWinPref() : amazonWinPref();
-        }
-        if (box == null) return;
+        SlotViews v = slotViews(slot);
+        if (v == null) return;
+        int customIndex = slot >= SLOT_CUSTOM_BASE ? slot - SLOT_CUSTOM_BASE : -1;
 
-        final String pkg = win.contains("/") ? win.substring(0, win.indexOf('/')) : win;
+        String pkg = pkgOf(win);
         // Binding the button that already opens this mapping's own app would be a
         // redirect from an app to itself.
         if (customIndex >= 0 && pkg.equals(customApp(customIndex))) {
             Toast.makeText(this, R.string.map_button_is_same_app, Toast.LENGTH_LONG).show();
-            box.setText(boxText(keyPref, winPref));
+            v.box.setText(boxText(v.keyPref, v.winPref));
             return;
         }
         CharSequence owner = buttonInUseBy(Prefs.DEFAULT_LAUNCH_KEYCODE, win, slot);
         if (owner != null) {
             Toast.makeText(this, getString(R.string.map_button_in_use, owner),
                     Toast.LENGTH_LONG).show();
-            box.setText(boxText(keyPref, winPref));
+            v.box.setText(boxText(v.keyPref, v.winPref));
             return;
         }
         // Back to the stored value: the learn is over, and declining the warning below
         // would otherwise leave the box stuck on its "Press a button…" prompt.
-        box.setText(boxText(keyPref, winPref));
+        v.box.setText(boxText(v.keyPref, v.winPref));
         // The Apps grid is a shell surface, not content, so it skips the warning below.
         // Matched by package: its window class varies (often a bare FrameLayout).
         boolean isAppsGrid = pkg.equals(APPS_GRID_PKG);
         boolean isContentApp = !isAppsGrid
                 && getPackageManager().getLeanbackLaunchIntentForPackage(pkg) != null;
         if (isContentApp) {
-            // Native dialog, but clearly ours: our logo plus a two-line title that
-            // starts with the app name, so it can't be mistaken for a system prompt.
-            new android.app.AlertDialog.Builder(this)
-                    .setIcon(R.drawable.ic_logo)
-                    .setTitle(getString(R.string.app_name) + ":\n"
-                            + getString(R.string.redirect_learn_warn_title))
-                    .setMessage(getString(R.string.redirect_learn_warn_msg, appLabel(pkg)))
-                    .setPositiveButton(R.string.redirect_learn_warn_add,
-                            new android.content.DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(android.content.DialogInterface d, int which) {
-                            bindWindow(box, keyPref, winPref, win, pkg);
-                        }
-                    })
-                    .setNegativeButton(R.string.redirect_learn_warn_cancel, null)
-                    .show();
+            sPendingWarnSlot = slot;
+            sPendingWarnWindow = win;
+            showContentAppWarning();
         } else {
-            bindWindow(box, keyPref, winPref, win, pkg);
+            bindWindow(v.box, v.keyPref, v.winPref, win, pkg);
         }
+    }
+
+    /** The package part of a learned window, which is either "pkg" or "pkg/activity". */
+    private static String pkgOf(String win) {
+        return win.contains("/") ? win.substring(0, win.indexOf('/')) : win;
+    }
+
+    /** The value box of a slot plus the two prefs behind it. */
+    private static final class SlotViews {
+        final TextView box;
+        final IntPref keyPref;
+        final StrPref winPref;
+        SlotViews(TextView box, IntPref keyPref, StrPref winPref) {
+            this.box = box;
+            this.keyPref = keyPref;
+            this.winPref = winPref;
+        }
+    }
+
+    /** Resolves a slot to its views, or null while the row it belongs to is not up. */
+    private SlotViews slotViews(int slot) {
+        TextView box;
+        IntPref keyPref;
+        StrPref winPref;
+        if (slot >= SLOT_CUSTOM_BASE) {
+            int index = slot - SLOT_CUSTOM_BASE;
+            // Only reachable with the dialog up; onResume re-opens it before we get here.
+            if (customButtonBoxes == null || index >= customButtonBoxes.size()) return null;
+            box = customButtonBoxes.get(index);
+            keyPref = customKeyPref(index);
+            winPref = customWinPref(index);
+        } else {
+            box = (slot == SLOT_LAUNCHER) ? launcherBox : amazonBox;
+            keyPref = (slot == SLOT_LAUNCHER) ? launcherPref() : amazonPref();
+            winPref = (slot == SLOT_LAUNCHER) ? launcherWinPref() : amazonWinPref();
+        }
+        return box == null ? null : new SlotViews(box, keyPref, winPref);
+    }
+
+    /**
+     * Asks whether a content app's button should really be taken over. Works off the
+     * pending warning rather than parameters, so {@link #onResume} can put the same
+     * question back up after the app came forward again and destroyed this screen with
+     * the dialog on it.
+     */
+    private void showContentAppWarning() {
+        if (sPendingWarnSlot < 0 || sPendingWarnWindow == null) return;
+        if (warnDialog != null && warnDialog.isShowing()) return;
+        final SlotViews v = slotViews(sPendingWarnSlot);
+        if (v == null) return;   // custom row not back yet, the next resume retries
+        final String win = sPendingWarnWindow;
+        final String pkg = pkgOf(win);
+        // Native dialog, but clearly ours: our logo plus a two-line title that
+        // starts with the app name, so it can't be mistaken for a system prompt.
+        warnDialog = new android.app.AlertDialog.Builder(this)
+                .setIcon(R.drawable.ic_logo)
+                .setTitle(getString(R.string.app_name) + ":\n"
+                        + getString(R.string.redirect_learn_warn_title))
+                .setMessage(getString(R.string.redirect_learn_warn_msg, appLabel(pkg)))
+                .setPositiveButton(R.string.redirect_learn_warn_add,
+                        new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        clearPendingWarn();
+                        bindWindow(v.box, v.keyPref, v.winPref, win, pkg);
+                    }
+                })
+                .setNegativeButton(R.string.redirect_learn_warn_cancel,
+                        new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        clearPendingWarn();
+                    }
+                })
+                .setOnCancelListener(new android.content.DialogInterface.OnCancelListener() {
+                    @Override
+                    public void onCancel(android.content.DialogInterface d) {
+                        clearPendingWarn();   // Back is a no as well
+                    }
+                })
+                .show();
+        warnDialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(android.content.DialogInterface d) {
+                if (warnDialog == d) warnDialog = null;
+            }
+        });
+    }
+
+    /** The question has been answered, either way, so it must not come back. */
+    private void clearPendingWarn() {
+        sPendingWarnSlot = -1;
+        sPendingWarnWindow = null;
     }
 
     /** Commits a window binding to a slot (clearing its keycode) and refreshes the box. */
@@ -2188,6 +2270,8 @@ public class MainActivity extends Activity {
         // If a branded button was learned while we were backgrounded, finish it now
         // that we're front again (this is also where the content-app warning shows).
         processPendingLearn();
+        // An app that re-launched over the warning took it down with this screen. Ask again.
+        showContentAppWarning();
     }
 
     @Override
@@ -2198,6 +2282,18 @@ public class MainActivity extends Activity {
         if (customDialog != null) {
             customDialogTearingDown = true;
             customDialog.dismiss();
+        }
+        // The pending warning deliberately survives this: it comes back in onResume.
+        if (warnDialog != null) {
+            warnDialog.dismiss();
+            warnDialog = null;
+        }
+        // Unless the user left on purpose, in which case an unanswered question or an
+        // unfinished learn must not ambush them the next time they open this screen.
+        if (isFinishing()) {
+            clearPendingWarn();
+            sPendingSlot = -1;
+            sPendingWindow = null;
         }
         super.onDestroy();
     }
