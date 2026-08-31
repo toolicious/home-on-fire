@@ -341,6 +341,11 @@ adb shell am start -n io.github.toolicious.homeonfire/.MainActivity
 In the app, flip the **Accessibility service** switch and pick a
 target via **Choose target app…**.
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=nek5TjledNM"><img src="docs/techdoctoruk-walkthrough.jpg" alt="TechDoctorUK pressing Home with Home on Fire running" width="640"></a><br>
+  <em><a href="https://www.youtube.com/watch?v=nek5TjledNM">Video walkthrough by TechDoctorUK</a> (recorded on version 1.1.3).</em>
+</p>
+
 ---
 
 ## Building from source
