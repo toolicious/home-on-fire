@@ -387,6 +387,13 @@ public class HijackService extends AccessibilityService {
     private static final long LAUNCH_CHAIN_MS = 3_000L;
 
     /**
+     * How long a Back press still explains a return to the branded surface. Pressing the
+     * button again from inside the app it opened looks identical from here, so the Back
+     * is what tells the two apart: these buttons send no key code of their own.
+     */
+    private static final long BACK_OUT_WINDOW_MS = 3_000L;
+
+    /**
      * Wall-clock deadline (System.currentTimeMillis()) until which the
      * hijack is suspended. Set by {@link #requestBypass} only. The
      * double-press path does NOT set a lingering bypass; the next Home
@@ -931,11 +938,16 @@ public class HijackService extends AccessibilityService {
         // Leaving the app this button opens drops the user back onto the branded surface
         // that opened it, and redirecting again would lock them inside that app with no
         // way out. The surface only moves the foreground trackers when it reports a real
-        // content class, so the app they came from is in one tracker or the other.
+        // content class, so the app they came from is in one tracker or the other. A fresh
+        // Back is required as well, otherwise pressing the button again from inside the
+        // app would toggle between the app and the launcher instead of just reopening it.
         String cameFrom = brandedPkg != null && brandedPkg.equals(currentForegroundPkg)
                 ? previousForegroundPkg
                 : currentForegroundPkg;
-        if (appToLaunch.equals(cameFrom) && now - lastWindowLaunchAt >= LAUNCH_CHAIN_MS) {
+        boolean backedOut = lastKeyCode == KeyEvent.KEYCODE_BACK
+                && now - lastKeyTime < BACK_OUT_WINDOW_MS;
+        if (appToLaunch.equals(cameFrom) && backedOut
+                && now - lastWindowLaunchAt >= LAUNCH_CHAIN_MS) {
             String target = prefs.getTargetPackage();
             if (target == null || target.isEmpty()) {
                 if (prefs.isVerboseLogging()) {
