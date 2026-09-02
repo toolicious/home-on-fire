@@ -285,20 +285,32 @@ public class LogViewerActivity extends Activity {
         return AppInfo.fireOsVersion();
     }
 
+    /** How many of our own log lines the viewer keeps, newest last. */
+    private static final int MAX_LOG_LINES = 400;
+
     /**
      * Best-effort tail of our own logcat (own-UID lines only, no permission
      * needed). The "--------- beginning of system/main" lines logcat prints
      * at each buffer boundary are stripped, so a build where the service has
      * never produced a line shows as genuinely empty rather than as a lone
      * marker.
+     *
+     * No -t: logcat takes its tail count off the whole device log before the
+     * filter runs, so on a chatty device the last 400 lines hold a handful of
+     * ours and the part worth reading is already gone. Dump everything we wrote
+     * and cut it down here.
      */
     private String readOwnLog() {
         String raw = AppInfo.runCmd(new String[]{
-                "logcat", "-d", "-v", "time", "-t", "400", "HomeOnFire:V", "*:S"});
-        StringBuilder sb = new StringBuilder();
+                "logcat", "-d", "-v", "time", "HomeOnFire:V", "*:S"});
+        java.util.ArrayList<String> lines = new java.util.ArrayList<>();
         for (String line : raw.split("\n")) {
             if (line.trim().startsWith("---------")) continue;
-            sb.append(line).append('\n');
+            lines.add(line);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = Math.max(0, lines.size() - MAX_LOG_LINES); i < lines.size(); i++) {
+            sb.append(lines.get(i)).append('\n');
         }
         return sb.toString().trim();
     }
