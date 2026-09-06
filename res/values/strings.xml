@@ -85,7 +85,7 @@
     <string name="redirect_learn_warn_msg">%1$s is an app you watch, not a shell screen. Mapping its button makes %1$s unreachable everywhere, even from its own tile. Map it anyway?</string>
     <string name="redirect_learn_warn_add">Map anyway</string>
     <string name="redirect_learn_warn_cancel">Cancel</string>
-    <string name="map_app_not_installed">This app is not installed, so its button only opens the Amazon Appstore. Install the app first, then map its button.</string>
+    <string name="map_app_not_installed">That button opens an Amazon Appstore page, not an app, so there is nothing to map. If the app is not installed, install it first and try again.</string>
 
     <!-- Friendly names for bound launch keys, shown on the custom-launch-key row. -->
     <string name="key_red">Red</string>

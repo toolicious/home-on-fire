@@ -609,6 +609,12 @@ public class HijackService extends AccessibilityService {
             return;
         }
         if (pkgStr != null && clsStr != null) {
+            // Names the store screen we just refused to treat as the Apps grid, so a
+            // report tells us straight away when Amazon renames or reshapes it.
+            if (AMAZON_APPS_GRID.equals(pkgStr) && !isAppsGridWindow(clsStr)
+                    && prefs.isVerboseLogging()) {
+                Log.i(TAG, "Appstore screen ignored, not the Apps grid: " + clsStr);
+            }
             boolean mapOn = prefs.isLaunchKeyEnabled();
             String launchWin = prefs.getLaunchWindow();
             boolean matchLaunch = windowMatches(pkgStr, clsStr, launchWin);
@@ -886,20 +892,26 @@ public class HijackService extends AccessibilityService {
     private boolean windowMatches(String pkgStr, String clsStr, String binding) {
         if (binding == null || binding.isEmpty() || pkgStr == null) return false;
         if (!(binding.equals(pkgStr) || binding.startsWith(pkgStr + "/"))) return false;
-        // For the Apps binding (whole venezia package) don't fire on Amazon Appstore
-        // product / deeplink pages, which is what an UNINSTALLED app's button opens
-        // (e.g. pressing Netflix with Netflix not installed). Only the Apps grid should
-        // redirect. The grid's window class is AppsGridLauncherActivity or a bare
-        // android.widget.FrameLayout, neither of which is a product page.
-        if (AMAZON_APPS_GRID.equals(pkgStr) && isAppstoreProductPage(clsStr)) return false;
+        // The Apps binding covers the whole venezia package, and Amazon's store lives in
+        // that same package. Only the grid may fire, see isAppsGridWindow.
+        if (AMAZON_APPS_GRID.equals(pkgStr) && !isAppsGridWindow(clsStr)) return false;
         return true;
     }
 
-    /** Amazon Appstore product / install / deeplink pages (not the Apps grid). */
-    static boolean isAppstoreProductPage(String cls) {
+    /**
+     * True for a venezia window that can be the Apps grid. The grid reports either an
+     * AppsGrid activity or, on Fire OS 8, nothing but a bare framework container. Every
+     * other class in that package is a store screen (app details, categories, deeplinks,
+     * settings, install dialogs), and matching those would throw the user into the mapped
+     * app while browsing the store.
+     *
+     * A whitelist on purpose: Amazon adds and renames store screens, and every one they
+     * add would otherwise start firing until we notice.
+     */
+    static boolean isAppsGridWindow(String cls) {
         if (cls == null) return false;
-        return cls.contains("Details") || cls.contains("AppLaunch")
-                || cls.contains("UriMatch") || cls.contains("deeplink") || cls.contains(".pdi.");
+        // "AppsGrid" and not just "Grid": CategoryGridActivity is store browsing.
+        return cls.contains("AppsGrid") || cls.startsWith("android.");
     }
 
     /**
@@ -1822,6 +1834,8 @@ public class HijackService extends AccessibilityService {
     private boolean maskAttached = false;
     private volatile boolean maskArmed = false;
     private volatile String maskTargetPkg = null;
+    /** When the launch behind the current mask was issued, for the timings in the log. */
+    private volatile long maskArmedAt = 0L;
     private Runnable maskGraceRunnable = null;
     private Runnable maskTimeoutRunnable = null;
     /** Throwaway overlay added once at service start to warm the render path. */
@@ -1848,6 +1862,7 @@ public class HijackService extends AccessibilityService {
         }
         maskArmed = true;
         maskTargetPkg = target;
+        maskArmedAt = System.currentTimeMillis();
         maskGraceRunnable = new Runnable() {
             @Override
             public void run() {
@@ -1872,6 +1887,10 @@ public class HijackService extends AccessibilityService {
      */
     private void onMaskTargetEvent(CharSequence cls) {
         if (maskArmed) {
+            // The one line that says how long Fire OS held our launch back. Without it a
+            // report only shows that the target came up eventually, not how late.
+            Log.i(TAG, "Target " + maskTargetPkg + " appeared " + sinceMaskArmed()
+                    + "ms after the launch, cls=" + cls);
             maskArmed = false;
             if (maskGraceRunnable != null && mainHandler != null) {
                 mainHandler.removeCallbacks(maskGraceRunnable);
@@ -2161,12 +2180,20 @@ public class HijackService extends AccessibilityService {
             public void run() {
                 maskTimeoutRunnable = null;
                 if (maskAttached) {
-                    Log.i(TAG, logMsg);
+                    // With the state appended, a single log tells a launch that was only
+                    // slow from one that never arrived, and names what took the screen.
+                    Log.i(TAG, logMsg + " (foreground=" + currentForegroundPkg
+                            + ", " + sinceMaskArmed() + "ms since the launch)");
                     removeMask();
                 }
             }
         };
         mainHandler.postDelayed(maskTimeoutRunnable, delayMs);
+    }
+
+    /** Milliseconds since the launch this mask belongs to, or -1 if none is on record. */
+    private long sinceMaskArmed() {
+        return maskArmedAt > 0L ? System.currentTimeMillis() - maskArmedAt : -1L;
     }
 
     @Override

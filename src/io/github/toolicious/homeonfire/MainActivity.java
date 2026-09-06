@@ -1557,10 +1557,11 @@ public class MainActivity extends Activity {
                     if (box != null) box.setText(boxText(keyPref, winPref));
                     return;
                 }
-                // An uninstalled app's button only opens the Amazon Appstore product
-                // page (e.g. Netflix when Netflix isn't installed), so there is nothing
-                // app-specific to bind. Tell the user and return to the config screen.
-                if (pkg.equals(APPS_GRID_PKG) && HijackService.isAppstoreProductPage(activity)) {
+                // A store screen is not a button we can bind. It is what an uninstalled
+                // app's button opens (Netflix without Netflix installed), and it is also
+                // where several branded buttons pass through. Binding it would fire on
+                // every store screen the user later browses.
+                if (pkg.equals(APPS_GRID_PKG) && !HijackService.isAppsGridWindow(activity)) {
                     Toast.makeText(getApplicationContext(),
                             R.string.map_app_not_installed, Toast.LENGTH_LONG).show();
                     HijackService.bringConfigToFrontDelayed();
