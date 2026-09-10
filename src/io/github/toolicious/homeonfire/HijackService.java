@@ -408,6 +408,15 @@ public class HijackService extends AccessibilityService {
     private Runnable pendingReassert = null;
     /** When that redirect ran, to tell its launch chain from a later return by the user. */
     private long lastWindowLaunchAt = 0L;
+    /**
+     * App a mapped button just launched, until it shows a window of its own or the grace
+     * runs out. While it is set, an Amazon home arrival comes from the button's own screen
+     * closing, not from a Home press, and the auto-hijack must not start the launcher
+     * over the app.
+     */
+    private String pendingButtonApp = null;
+    private long pendingButtonAt = 0L;
+    private static final long BUTTON_LAUNCH_GRACE_MS = 4_000L;
 
     /**
      * Wall-clock time and code of the most recent key event we saw,
@@ -547,6 +556,9 @@ public class HijackService extends AccessibilityService {
             previousForegroundCls = currentForegroundCls;
             currentForegroundPkg = pkgStr;
             currentForegroundCls = clsStr;
+            // The app a mapped button launched is up. From here on an Amazon home arrival
+            // is a Home press again.
+            if (pkgStr.equals(pendingButtonApp)) pendingButtonApp = null;
         }
 
         // Learn mode (beta universal redirect): the config screen asked us to capture
@@ -826,6 +838,27 @@ public class HijackService extends AccessibilityService {
 
         String prev = previousForegroundPkg;
         long now = System.currentTimeMillis();
+        // A mapped button just launched an app that has not shown a window yet. This Amazon
+        // home comes from the button's own screen (the Apps grid) closing, not from a Home
+        // press. Hijacking now would start the launcher over the app, so launch the app again.
+        if (pendingButtonApp != null && now - pendingButtonAt < BUTTON_LAUNCH_GRACE_MS) {
+            String app = pendingButtonApp;
+            pendingButtonApp = null;   // one retry, then Amazon home counts as real again
+            if (pendingReassert != null && mainHandler != null) {
+                mainHandler.removeCallbacks(pendingReassert);
+            }
+            launchTarget(app, "Amazon home appeared while " + app
+                    + " was still starting, launching it again", false);
+            return;
+        }
+        // The last hijack's launch is still held by the app-switch lock (mask armed for
+        // this target). Another start would only queue up behind it.
+        if (maskArmed && target.equals(maskTargetPkg)) {
+            if (prefs.isVerboseLogging()) {
+                Log.i(TAG, "Auto-hijack skipped: launch of " + target + " still pending");
+            }
+            return;
+        }
         // Arrivals out of Amazon's own home shell (launcher / settings / quicksettings,
         // none of which expose a Leanback launcher entry; a full Amazon app such as Prime
         // Video does have one and redirects like any other app).
@@ -974,6 +1007,8 @@ public class HijackService extends AccessibilityService {
         // Nothing to re-assert after a launch that never happened (target uninstalled).
         if (!launchTarget(appToLaunch, reason, false)) return;
         lastWindowLaunchAt = now;
+        pendingButtonApp = appToLaunch;
+        pendingButtonAt = now;
         // Some branded apps keep launching activities that re-cover the target right
         // after (e.g. Prime: DeepLinkRouting then Landing). Re-assert the target ONLY if
         // that same branded app is what came back to the front, so we win the launch-chain
@@ -1820,8 +1855,13 @@ public class HijackService extends AccessibilityService {
     // there only, so this comment cannot drift). The grace is read live so a tester can
     // probe the start flash; the hold gives the launcher time to paint before the fade,
     // closing the end flash.
-    /** Safety net: force-remove the overlay if the target window never announces itself. */
-    private static final long MASK_HARD_TIMEOUT_MS = 6_500L;
+    /**
+     * Safety net: force-remove the overlay if the target window never announces itself.
+     * The app-switch lock alone holds a launch for 5 s and a cold start of the launcher
+     * comes on top. A shorter timeout removes the overlay while the launch is still
+     * queued, and Amazon's home stays visible until the launcher starts.
+     */
+    private static final long MASK_HARD_TIMEOUT_MS = 10_000L;
     /** Delay after the service connects before prewarming the overlay path. */
     private static final long MASK_PREWARM_DELAY_MS = 600L;
     /** How long the invisible prewarm overlay stays up (long enough to render a few frames). */
