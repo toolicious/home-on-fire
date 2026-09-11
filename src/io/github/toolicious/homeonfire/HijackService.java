@@ -409,14 +409,17 @@ public class HijackService extends AccessibilityService {
     /** When that redirect ran, to tell its launch chain from a later return by the user. */
     private long lastWindowLaunchAt = 0L;
     /**
-     * App a mapped button just launched, until it shows a window of its own or the grace
-     * runs out. While it is set, an Amazon home arrival comes from the button's own screen
-     * closing, not from a Home press, and the auto-hijack must not start the launcher
-     * over the app.
+     * App a mapped button launched, and when. For {@link #BUTTON_LAUNCH_GRACE_MS} after
+     * that launch an Amazon home arrival comes from the button's own screen closing, not
+     * from a Home press, and the auto-hijack must not start the launcher over the app.
+     * A fixed time window on purpose: Amazon's home can show up once or twice, before or
+     * after the app's first window, so the app having shown a window proves nothing.
      */
     private String pendingButtonApp = null;
     private long pendingButtonAt = 0L;
-    private static final long BUTTON_LAUNCH_GRACE_MS = 4_000L;
+    private int pendingButtonRelaunches = 0;
+    private static final long BUTTON_LAUNCH_GRACE_MS = 5_000L;
+    private static final int BUTTON_MAX_RELAUNCHES = 2;
 
     /**
      * Wall-clock time and code of the most recent key event we saw,
@@ -556,9 +559,6 @@ public class HijackService extends AccessibilityService {
             previousForegroundCls = currentForegroundCls;
             currentForegroundPkg = pkgStr;
             currentForegroundCls = clsStr;
-            // The app a mapped button launched is up. From here on an Amazon home arrival
-            // is a Home press again.
-            if (pkgStr.equals(pendingButtonApp)) pendingButtonApp = null;
         }
 
         // Learn mode (beta universal redirect): the config screen asked us to capture
@@ -838,18 +838,33 @@ public class HijackService extends AccessibilityService {
 
         String prev = previousForegroundPkg;
         long now = System.currentTimeMillis();
-        // A mapped button just launched an app that has not shown a window yet. This Amazon
-        // home comes from the button's own screen (the Apps grid) closing, not from a Home
-        // press. Hijacking now would start the launcher over the app, so launch the app again.
+        // A mapped button launched an app a moment ago. This Amazon home comes from the
+        // button's own screen (the Apps grid) closing, not from a Home press, and it can
+        // arrive before or after the app's first window, once or twice. Hijacking would
+        // start the launcher over the app, so launch the app again. A Home press inside
+        // this window lands back in the app; the next one works as usual.
         if (pendingButtonApp != null && now - pendingButtonAt < BUTTON_LAUNCH_GRACE_MS) {
             String app = pendingButtonApp;
-            pendingButtonApp = null;   // one retry, then Amazon home counts as real again
-            if (pendingReassert != null && mainHandler != null) {
-                mainHandler.removeCallbacks(pendingReassert);
+            if (maskArmed && app.equals(maskTargetPkg)) {
+                if (prefs.isVerboseLogging()) {
+                    Log.i(TAG, "Amazon home appeared, relaunch of " + app + " still pending");
+                }
+                return;
             }
-            launchTarget(app, "Amazon home appeared while " + app
-                    + " was still starting, launching it again", false);
-            return;
+            if (pendingButtonRelaunches < BUTTON_MAX_RELAUNCHES) {
+                pendingButtonRelaunches++;
+                if (pendingReassert != null && mainHandler != null) {
+                    mainHandler.removeCallbacks(pendingReassert);
+                }
+                // The relaunch can land in the app-switch lock like a Home redirect does,
+                // so it gets the loading screen on Fire OS 7.
+                launchTarget(app, "Amazon home appeared while " + app
+                        + " was starting, launching it again (" + pendingButtonRelaunches
+                        + ")", true);
+                return;
+            }
+            Log.i(TAG, "Amazon home keeps covering " + app + ", leaving it");
+            pendingButtonApp = null;
         }
         // The last hijack's launch is still held by the app-switch lock (mask armed for
         // this target). Another start would only queue up behind it.
@@ -1009,6 +1024,7 @@ public class HijackService extends AccessibilityService {
         lastWindowLaunchAt = now;
         pendingButtonApp = appToLaunch;
         pendingButtonAt = now;
+        pendingButtonRelaunches = 0;
         // Some branded apps keep launching activities that re-cover the target right
         // after (e.g. Prime: DeepLinkRouting then Landing). Re-assert the target ONLY if
         // that same branded app is what came back to the front, so we win the launch-chain
@@ -1997,7 +2013,12 @@ public class HijackService extends AccessibilityService {
         removePrewarm();
         try {
             LoaderView view = new LoaderView(this);
-            view.setCaptions(getString(R.string.loader_caption_loading),
+            // The launcher caption only fits the launcher; a relaunched button app gets a
+            // neutral one.
+            boolean forLauncher = maskTargetPkg != null
+                    && maskTargetPkg.equals(prefs.getTargetPackage());
+            view.setCaptions(getString(forLauncher
+                            ? R.string.loader_caption_loading : R.string.loader_caption_loading_app),
                     getString(R.string.loader_caption_ready));
             view.setLooping(false); // one-shot: play once, hold on the "Ready" frame
             view.setBlackScreen(prefs.isMaskBlackScreen()); // plain black instead of the animation

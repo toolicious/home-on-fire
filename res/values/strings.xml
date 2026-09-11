@@ -115,6 +115,8 @@
 
     <!-- Loader animation, reachable as an easter egg via the info-dialog logo. -->
     <string name="loader_caption_loading">Loading custom launcher…</string>
+    <!-- Shown instead when the loading screen covers an app a mapped button opened. -->
+    <string name="loader_caption_loading_app">Loading app…</string>
     <string name="loader_caption_ready">Ready</string>
 
     <!-- Header info button -->
