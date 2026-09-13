@@ -301,18 +301,19 @@ public class LogViewerActivity extends Activity {
      * and cut it down here.
      */
     private String readOwnLog() {
-        String raw = AppInfo.runCmd(new String[]{
-                "logcat", "-d", "-v", "time", "HomeOnFire:V", "*:S"});
-        java.util.ArrayList<String> lines = new java.util.ArrayList<>();
-        for (String line : raw.split("\n")) {
-            if (line.trim().startsWith("---------")) continue;
-            lines.add(line);
-        }
-        StringBuilder sb = new StringBuilder();
-        for (int i = Math.max(0, lines.size() - MAX_LOG_LINES); i < lines.size(); i++) {
-            sb.append(lines.get(i)).append('\n');
-        }
-        return sb.toString().trim();
+        // Keep the newest lines while reading: a head cap would drop exactly those, and
+        // holding the whole dump first costs memory for nothing.
+        java.util.List<String> tail = AppInfo.runCmdTail(
+                new String[]{"logcat", "-d", "-v", "time", "HomeOnFire:V", "*:S"},
+                MAX_LOG_LINES,
+                new AppInfo.LineFilter() {
+                    @Override
+                    public boolean skip(String line) {
+                        // logcat's "--------- beginning of main" buffer markers
+                        return line.trim().startsWith("---------");
+                    }
+                });
+        return android.text.TextUtils.join("\n", tail).trim();
     }
 
     private int dp(int value) {

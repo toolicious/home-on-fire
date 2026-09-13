@@ -93,6 +93,14 @@ final class AppInfo {
      * (process blocked, SELinux denial on a locked build) yields "".
      */
     static String runCmd(String[] cmd) {
+        return runCmd(cmd, 600);
+    }
+
+    /**
+     * As above, reading at most {@code maxLines} lines from the START of the output and
+     * dropping the rest.
+     */
+    static String runCmd(String[] cmd, int maxLines) {
         Process p = null;
         try {
             p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
@@ -100,7 +108,7 @@ final class AppInfo {
             StringBuilder sb = new StringBuilder();
             String line;
             int n = 0;
-            while ((line = r.readLine()) != null && n < 600) {
+            while ((line = r.readLine()) != null && n < maxLines) {
                 sb.append(line).append('\n');
                 n++;
             }
@@ -111,5 +119,35 @@ final class AppInfo {
         } finally {
             if (p != null) p.destroy();
         }
+    }
+
+    /**
+     * Reads the whole output but keeps only the LAST {@code keepLines} lines, so a long
+     * dump costs the memory of its tail, not of the dump. Lines for which {@code skip}
+     * returns true are not kept.
+     */
+    interface LineFilter {
+        boolean skip(String line);
+    }
+
+    static java.util.List<String> runCmdTail(String[] cmd, int keepLines, LineFilter skip) {
+        java.util.ArrayDeque<String> tail = new java.util.ArrayDeque<>(keepLines + 1);
+        Process p = null;
+        try {
+            p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (skip != null && skip.skip(line)) continue;
+                if (tail.size() == keepLines) tail.pollFirst();
+                tail.addLast(line);
+            }
+            r.close();
+        } catch (Exception e) {
+            // whatever was read so far is still the best answer
+        } finally {
+            if (p != null) p.destroy();
+        }
+        return new java.util.ArrayList<>(tail);
     }
 }

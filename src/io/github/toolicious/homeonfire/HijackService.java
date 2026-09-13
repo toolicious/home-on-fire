@@ -409,17 +409,25 @@ public class HijackService extends AccessibilityService {
     /** When that redirect ran, to tell its launch chain from a later return by the user. */
     private long lastWindowLaunchAt = 0L;
     /**
-     * App a mapped button launched, and when. For {@link #BUTTON_LAUNCH_GRACE_MS} after
+     * App a mapped button launched; the launch time is {@link #lastWindowLaunchAt}. For {@link #BUTTON_LAUNCH_GRACE_MS} after
      * that launch an Amazon home arrival comes from the button's own screen closing, not
      * from a Home press, and the auto-hijack must not start the launcher over the app.
      * A fixed time window on purpose: Amazon's home can show up once or twice, before or
      * after the app's first window, so the app having shown a window proves nothing.
      */
     private String pendingButtonApp = null;
-    private long pendingButtonAt = 0L;
     private int pendingButtonRelaunches = 0;
     private static final long BUTTON_LAUNCH_GRACE_MS = 5_000L;
     private static final int BUTTON_MAX_RELAUNCHES = 2;
+    /**
+     * After this much of the grace window, an Amazon home that covers the app while it is
+     * already on screen counts as a Home press again. The grid closes within about a
+     * second of the launch, so a later arrival over a visible app is the user.
+     */
+    private static final long BUTTON_SETTLE_MS = 1_500L;
+    /** When the last relaunch of that app was issued, so a second Amazon home right after does not stack another. */
+    private long pendingRelaunchAt = 0L;
+    private static final long RELAUNCH_IN_FLIGHT_MS = 1_500L;
 
     /**
      * Wall-clock time and code of the most recent key event we saw,
@@ -624,7 +632,7 @@ public class HijackService extends AccessibilityService {
             // Names the store screen we just refused to treat as the Apps grid, so a
             // report tells us straight away when Amazon renames or reshapes it.
             if (AMAZON_APPS_GRID.equals(pkgStr) && !isAppsGridWindow(clsStr)
-                    && prefs.isVerboseLogging()) {
+                    && prefs.isLaunchKeyEnabled() && prefs.isVerboseLogging()) {
                 Log.i(TAG, "Appstore screen ignored, not the Apps grid: " + clsStr);
             }
             boolean mapOn = prefs.isLaunchKeyEnabled();
@@ -819,10 +827,17 @@ public class HijackService extends AccessibilityService {
 
     /**
      * Auto-hijack when Amazon home appears as a fresh foreground.
-     * Skips:
+     * In the order the code checks them:
+     *  - an active bypass ends a mapped button's grace window (the pending app is dropped)
+     *  - inside that grace window the arrival is the button's own screen closing: the app
+     *    is launched again (masked on Fire OS 7, at most twice, not while a relaunch is
+     *    still in flight), unless the app was already on screen and the settle time has
+     *    passed, which makes it a Home press after all
+     *  - the Home replacement being off, or no target, ends it here
+     *  - a launch of the target still held by the app-switch lock (mask armed): skipped
      *  - arrivals from within Amazon's own home shell (launcher, settings,
-     *    quicksettings, none of which expose a Leanback launcher entry);
-     *    returning from a full Amazon app such as Prime Video still redirects
+     *    quicksettings, none of which expose a Leanback launcher entry) after a recent
+     *    OK/Back; returning from a full Amazon app such as Prime Video still redirects
      *  - active long-press bypass window
      *  - detected double-presses (within debounce, no Back between
      *    last hijack and this WSE: Fire OS firmware-intercepts the
@@ -831,44 +846,69 @@ public class HijackService extends AccessibilityService {
      *    pressed Home twice)
      */
     private void handleAmazonHomeArrival() {
-        if (!prefs.isHijackEnabled()) return;
-
-        String target = prefs.getTargetPackage();
-        if (target == null || target.isEmpty() || target.equals(getPackageName())) return;
-
         String prev = previousForegroundPkg;
         long now = System.currentTimeMillis();
         // A mapped button launched an app a moment ago. This Amazon home comes from the
         // button's own screen (the Apps grid) closing, not from a Home press, and it can
         // arrive before or after the app's first window, once or twice. Hijacking would
-        // start the launcher over the app, so launch the app again. A Home press inside
-        // this window lands back in the app; the next one works as usual.
-        if (pendingButtonApp != null && now - pendingButtonAt < BUTTON_LAUNCH_GRACE_MS) {
+        // start the launcher over the app, so launch the app again. This belongs to the
+        // mapping, not to the Home replacement, so it runs even with that switched off.
+        if (pendingButtonApp != null && now < bypassUntil) {
+            // An explicit escape to Amazon home (mapped key, long-press panel, learn mode)
+            // outranks the grace window.
+            pendingButtonApp = null;
+        }
+        if (pendingButtonApp != null && now - lastWindowLaunchAt < BUTTON_LAUNCH_GRACE_MS) {
             String app = pendingButtonApp;
-            if (maskArmed && app.equals(maskTargetPkg)) {
+            // Unless the app was already on screen and Amazon home came over it well after
+            // the grid had closed: that is a Home press and is handled as one. On Fire
+            // OS 7 the grid closes within about a second of the launch; a Home press was
+            // seen two seconds after it.
+            if (app.equals(prev) && now - lastWindowLaunchAt >= BUTTON_SETTLE_MS) {
+                if (prefs.isVerboseLogging()) {
+                    Log.i(TAG, "Amazon home over " + app + " after " + (now - lastWindowLaunchAt)
+                            + "ms counts as a Home press");
+                }
+                pendingButtonApp = null;
+            } else if ((maskArmed && app.equals(maskTargetPkg))
+                    || now - pendingRelaunchAt < RELAUNCH_IN_FLIGHT_MS) {
+                // Fire OS 7 keeps the mask armed while the relaunch sits in the app-switch
+                // lock; Fire OS 8 has no mask, so a short time window stands in for it.
                 if (prefs.isVerboseLogging()) {
                     Log.i(TAG, "Amazon home appeared, relaunch of " + app + " still pending");
                 }
                 return;
-            }
-            if (pendingButtonRelaunches < BUTTON_MAX_RELAUNCHES) {
+            } else if (pendingButtonRelaunches < BUTTON_MAX_RELAUNCHES) {
                 pendingButtonRelaunches++;
+                pendingRelaunchAt = now;
                 if (pendingReassert != null && mainHandler != null) {
                     mainHandler.removeCallbacks(pendingReassert);
                 }
                 // The relaunch can land in the app-switch lock like a Home redirect does,
                 // so it gets the loading screen on Fire OS 7.
-                launchTarget(app, "Amazon home appeared while " + app
+                if (launchTarget(app, "Amazon home appeared while " + app
                         + " was starting, launching it again (" + pendingButtonRelaunches
-                        + ")", true);
-                return;
+                        + ")", true)) {
+                    return;
+                }
+                // The app is gone (uninstalled meanwhile): nothing to bring back, let the
+                // arrival count as a Home press instead of waiting out the window.
+                pendingButtonApp = null;
+            } else {
+                Log.i(TAG, "Amazon home keeps covering " + app + ", leaving it");
+                pendingButtonApp = null;
             }
-            Log.i(TAG, "Amazon home keeps covering " + app + ", leaving it");
-            pendingButtonApp = null;
         }
+
+        if (!prefs.isHijackEnabled()) return;
+
+        String target = prefs.getTargetPackage();
+        if (target == null || target.isEmpty() || target.equals(getPackageName())) return;
+
         // The last hijack's launch is still held by the app-switch lock (mask armed for
         // this target). Another start would only queue up behind it.
-        if (maskArmed && target.equals(maskTargetPkg)) {
+        if (maskArmed && target.equals(maskTargetPkg)
+                && sinceMaskArmed() < MASK_HARD_TIMEOUT_MS) {
             if (prefs.isVerboseLogging()) {
                 Log.i(TAG, "Auto-hijack skipped: launch of " + target + " still pending");
             }
@@ -942,7 +982,15 @@ public class HijackService extends AccessibilityService {
         if (!(binding.equals(pkgStr) || binding.startsWith(pkgStr + "/"))) return false;
         // The Apps binding covers the whole venezia package, and Amazon's store lives in
         // that same package. Only the grid may fire, see isAppsGridWindow.
-        if (AMAZON_APPS_GRID.equals(pkgStr) && !isAppsGridWindow(clsStr)) return false;
+        if (AMAZON_APPS_GRID.equals(pkgStr)) {
+            if (!isAppsGridWindow(clsStr)) return false;
+            // A bare container while a store screen is the registered foreground is a
+            // transition inside the store, not the grid arriving.
+            if (!isRealContentClass(clsStr) && AMAZON_APPS_GRID.equals(currentForegroundPkg)
+                    && !isAppsGridWindow(currentForegroundCls)) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -957,17 +1005,20 @@ public class HijackService extends AccessibilityService {
      * add would otherwise start firing until we notice.
      */
     static boolean isAppsGridWindow(String cls) {
-        if (cls == null) return false;
+        // No class name at all: nothing to reject on, and the old check let it through.
+        if (cls == null) return true;
         // "AppsGrid" and not just "Grid": CategoryGridActivity is store browsing.
-        return cls.contains("AppsGrid") || cls.startsWith("android.");
+        return cls.contains("AppsGrid") || !isRealContentClass(cls);
     }
 
     /**
      * A "Map custom buttons" slot bound to an app window (Apps, Live TV, Guide, ...)
      * instead of a keycode: the branded button opened its app, so we redirect to the
      * target launcher. Instant apart from the brief window flash that is unavoidable,
-     * since the system opens the branded app before we can react. No mask (this path
-     * never arms the app-switch lock).
+     * since the system opens the branded app before we can react. The first launch is
+     * unmasked; a relaunch after Amazon home covered the app (see
+     * {@link #handleAmazonHomeArrival}) is masked, because that one can land in the
+     * app-switch lock.
      */
     private void handleWindowLaunch(final String brandedPkg) {
         String target = prefs.getTargetPackage();
@@ -1023,8 +1074,8 @@ public class HijackService extends AccessibilityService {
         if (!launchTarget(appToLaunch, reason, false)) return;
         lastWindowLaunchAt = now;
         pendingButtonApp = appToLaunch;
-        pendingButtonAt = now;
         pendingButtonRelaunches = 0;
+        pendingRelaunchAt = 0L;
         // Some branded apps keep launching activities that re-cover the target right
         // after (e.g. Prime: DeepLinkRouting then Landing). Re-assert the target ONLY if
         // that same branded app is what came back to the front, so we win the launch-chain
@@ -1123,6 +1174,10 @@ public class HijackService extends AccessibilityService {
     private void redirectToAmazonHome(String reason) {
         bypassUntil = System.currentTimeMillis() + LONGPRESS_REDIRECT_BYPASS_MS;
         pendingHomeTabCapture = true;
+        // Asking for Amazon home outranks a button launch still in its grace window, and
+        // a loading screen for that launch must not cover the Amazon home asked for.
+        pendingButtonApp = null;
+        cancelMask();
         boolean ok = performGlobalAction(GLOBAL_ACTION_HOME);
         Log.i(TAG, reason + ". Dispatched GLOBAL_ACTION_HOME ok=" + ok);
     }
@@ -1337,10 +1392,11 @@ public class HijackService extends AccessibilityService {
     }
 
     /**
-     * @param withMask whether to arm the Fire OS 7 masking overlay. The instant
-     *   shortcuts (custom launch key, Apps-button redirect) pass {@code false}:
-     *   they never route through Home, so no app-switch lock is armed and there
-     *   is no delay to cover.
+     * @param withMask whether to arm the Fire OS 7 masking overlay. Key-code shortcuts
+     *   and the first launch of a mapped app button pass {@code false}: no Home press,
+     *   no app-switch lock, nothing to cover. A relaunch of a button app after Amazon
+     *   home covered it passes {@code true}, since that start can be held like a Home
+     *   redirect.
      */
     private boolean launchTarget(String target, String reasonForLog, boolean withMask) {
         PackageManager pm = getPackageManager();
@@ -1381,6 +1437,11 @@ public class HijackService extends AccessibilityService {
             // target (which may exit it back to Amazon home) would
             // hit the still-active bypass and strand the user there.
             bypassUntil = 0L;
+            // Launching anything else ends a button launch's grace window, otherwise that
+            // window could pull the earlier app back over this one.
+            if (pendingButtonApp != null && !pendingButtonApp.equals(target)) {
+                pendingButtonApp = null;
+            }
             Log.i(TAG, reasonForLog + ". Launched " + target);
             if (withMask) armMask(target);
             return true;
@@ -1943,7 +2004,7 @@ public class HijackService extends AccessibilityService {
      */
     private void onMaskTargetEvent(CharSequence cls) {
         if (maskArmed) {
-            // The one line that says how long Fire OS held our launch back. Without it a
+            // Logs how long Fire OS held our launch back. Without it a
             // report only shows that the target came up eventually, not how late.
             Log.i(TAG, "Target " + maskTargetPkg + " appeared " + sinceMaskArmed()
                     + "ms after the launch, cls=" + cls);

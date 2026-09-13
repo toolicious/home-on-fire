@@ -29,21 +29,21 @@
     <string name="switch_accessibility">Accessibility service (required)</string>
     <string name="switch_accessibility_tip">Required for everything else in this app to work. This permission has to be granted only once via adb:\nadb shell pm grant io.github.toolicious.homeonfire android.permission.WRITE_SECURE_SETTINGS\nFrom a phone shell app there is no adb: run just the pm grant part, without the adb shell prefix.</string>
     <string name="switch_hijack">Replace ⌂ Home button</string>
-    <string name="switch_hijack_tip">Pressing ⌂ Home from any third-party app opens the target app instead of the Amazon home screen.\nDouble-press ⌂ Home about a second apart, or long-press it, in the target app to escape to the Amazon home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon on the Amazon home screen is focused to open the target app.</string>
-    <string name="switch_hijack_tip_fos7">Pressing ⌂ Home from any third-party app opens the target app instead of the Amazon home screen.\nOn Fire OS 7 the system holds a Home press for up to 5 seconds; a loading animation covers the wait. A mapped launcher button that sends its own key code opens instantly instead.\nDouble-press ⌂ Home about a second apart, or long-press it, in the target app to escape to the Amazon home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon on the Amazon home screen is focused to open the target app.</string>
-    <!-- Fire OS 7 only: what covers Amazon\'s home during the ~5 s Home delay
+    <string name="switch_hijack_tip">Pressing ⌂ Home from any third-party app opens the target app instead of the Amazon Home screen.\nDouble-press ⌂ Home about a second apart, or long-press it, in the target app to escape to the Amazon Home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon on the Amazon Home screen is focused to open the target app.</string>
+    <string name="switch_hijack_tip_fos7">Pressing ⌂ Home from any third-party app opens the target app instead of the Amazon Home screen.\nOn Fire OS 7 the system holds a Home press for up to 5 seconds; a loading animation covers the wait. A mapped launcher button that sends its own key code opens instantly instead.\nDouble-press ⌂ Home about a second apart, or long-press it, in the target app to escape to the Amazon Home screen if needed.\nPress ↩ Back or ◉ OK while the Home icon on the Amazon Home screen is focused to open the target app.</string>
+    <!-- Fire OS 7 only: what covers Amazon Home during the ~5 s Home delay
          (shown on the right of the Replace Home row). -->
     <string name="mask_cover_label">Loading screen:</string>
     <string name="mask_cover_animation">Animation</string>
     <string name="mask_cover_black">Black screen</string>
-    <string name="mask_cover_tip">On Fire OS 7 the system holds a ⌂ Home press for up to 5 seconds. This chooses what covers Amazon\'s home during the wait. Animation plays a short loading scene. Black screen shows a plain black screen with a loading message. Fire OS 8 has no delay, so nothing is shown. Hold ◉ OK to preview the current choice.</string>
+    <string name="mask_cover_tip">On Fire OS 7 the system holds a ⌂ Home press for up to 5 seconds. This chooses what covers Amazon Home during the wait. Animation plays a short loading scene. Black screen shows a plain black screen with a loading message. Fire OS 8 has no delay, so nothing is shown. Hold ◉ OK to preview the current choice.</string>
 
     <!-- Escape gestures, shown as a sub-row under Replace Home. Both default to on. -->
-    <string name="escape_label">Escape to Amazon home:</string>
+    <string name="escape_label">Escape to Amazon Home:</string>
     <string name="escape_long_label">Long-press</string>
     <string name="escape_double_label">Double-press</string>
-    <string name="escape_long_box_tip">Hold ⌂ Home to switch between your launcher and the Amazon home screen. Turn this off if you would rather see the panel that a long press opens, with its profile, sleep and mirroring tiles. Some remotes have a settings button that opens the very same panel, and Home on Fire cannot tell the two apart, so turning this off also stops that button from switching launchers. Press ◉ OK to switch it on or off.</string>
-    <string name="escape_double_box_tip">Press ⌂ Home twice, about a second apart, to stay on the Amazon home screen instead of being sent back to your launcher. Turn this off if you often press ⌂ Home repeatedly and end up on Amazon\'s home by accident. Press ◉ OK to switch it on or off.</string>
+    <string name="escape_long_box_tip">Hold ⌂ Home to switch between your launcher and the Amazon Home screen. Turn this off if you would rather see the panel that a long press opens, with its profile, sleep and mirroring tiles. Some remotes have a settings button that opens the very same panel, and Home on Fire cannot tell the two apart, so turning this off also stops that button from switching launchers. Press ◉ OK to switch it on or off.</string>
+    <string name="escape_double_box_tip">Press ⌂ Home twice, about a second apart, to stay on the Amazon Home screen instead of being sent back to your launcher. Turn this off if you often press ⌂ Home repeatedly and end up on Amazon Home by accident. Press ◉ OK to switch it on or off.</string>
 
     <string name="switch_boot">Launch on boot</string>
     <string name="switch_boot_tip">Open the target app automatically when the device boots or wakes from standby.</string>
@@ -54,10 +54,10 @@
     <string name="launch_key_label">Map custom buttons</string>
     <string name="launch_key_launcher_label">Launcher:</string>
     <string name="launch_key_amazon_label">Amazon Home:</string>
-    <string name="launch_key_tip">Map spare remote buttons: one for your target launcher, one for the Amazon home screen, Custom for any number of further apps. Buttons with their own key code (● ● ● ●, numbers, channel, subtitles, teletext, ⏪ ⏵ ⏩) switch instantly. Buttons that open an app (⊞ Apps, 📺 Live TV, Netflix) can only be redirected, which is slightly slower and may flash briefly.</string>
-    <string name="launch_key_tip_fos7">Map spare remote buttons: one for your target launcher, one for the Amazon home screen, Custom for any number of further apps. Buttons with their own key code (● ● ● ●, numbers, channel, subtitles, teletext, ⏪ ⏵ ⏩) switch instantly, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds. Buttons that open an app (⊞ Apps, 📺 Live TV, Netflix) can only be redirected, which is slightly slower and may flash briefly.</string>
+    <string name="launch_key_tip">Map spare remote buttons: one for your target launcher, one for the Amazon Home screen, Custom for any number of further apps. Buttons with their own key code (● ● ● ●, numbers, channel, subtitles, teletext, ⏪ ⏵ ⏩) switch instantly. Buttons that open an app (⊞ Apps, 📺 Live TV, Netflix) can only be redirected, which is slightly slower and may flash briefly.</string>
+    <string name="launch_key_tip_fos7">Map spare remote buttons: one for your target launcher, one for the Amazon Home screen, Custom for any number of further apps. Buttons with their own key code (● ● ● ●, numbers, channel, subtitles, teletext, ⏪ ⏵ ⏩) switch instantly, unlike ⌂ Home which Fire OS 7 holds for up to 5 seconds. Buttons that open an app (⊞ Apps, 📺 Live TV, Netflix) can only be redirected, which is slightly slower and may flash briefly.</string>
     <string name="launch_key_launcher_box_tip">Press ◉ OK to bind a remote button that opens your target launcher directly (↩ Back cancels); hold ◉ OK to reset.</string>
-    <string name="launch_key_amazon_box_tip">Press ◉ OK to bind a remote button that jumps to the Amazon home screen (↩ Back cancels); hold ◉ OK to reset.</string>
+    <string name="launch_key_amazon_box_tip">Press ◉ OK to bind a remote button that jumps to the Amazon Home screen (↩ Back cancels); hold ◉ OK to reset.</string>
     <string name="launch_key_none">None</string>
     <string name="launch_key_learning">Press a button…</string>
     <string name="launch_key_cleared">Button mapping reset</string>
@@ -85,7 +85,7 @@
     <string name="redirect_learn_warn_msg">%1$s is an app you watch, not a shell screen. Mapping its button makes %1$s unreachable everywhere, even from its own tile. Map it anyway?</string>
     <string name="redirect_learn_warn_add">Map anyway</string>
     <string name="redirect_learn_warn_cancel">Cancel</string>
-    <string name="map_app_not_installed">That button opens an Amazon Appstore page, not an app, so there is nothing to map. If the app is not installed, install it first and try again.</string>
+    <string name="map_button_opens_store">That button opens an Amazon Appstore page, not an app, so there is nothing to map. If the app is not installed, install it first and try again.</string>
 
     <!-- Friendly names for bound launch keys, shown on the custom-launch-key row. -->
     <string name="key_red">Red</string>
@@ -145,7 +145,7 @@
          checking; the overlay itself only runs on Fire OS 7). -->
     <string name="tuning_heading">Beta: overlay timing (Fire OS 7)</string>
     <string name="tuning_grace">Start cover delay</string>
-    <string name="tuning_grace_tip">How soon the loading overlay covers the screen after you press ⌂ Home. Lower hides the Amazon-home flash sooner. Press ◀ ▶ to change. Takes effect on Fire OS 7.</string>
+    <string name="tuning_grace_tip">How soon the loading overlay covers the screen after you press ⌂ Home. Lower hides the Amazon Home flash sooner. Press ◀ ▶ to change. Takes effect on Fire OS 7.</string>
     <string name="tuning_hold">End hold</string>
     <string name="tuning_hold_tip">How long the overlay stays solid after the launcher window appears, before it fades. Higher gives the launcher time to draw, hiding the flash at the end. Press ◀ ▶ to change. Takes effect on Fire OS 7.</string>
     <string name="tuning_fade">Fade</string>

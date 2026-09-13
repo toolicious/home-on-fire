@@ -1557,13 +1557,13 @@ public class MainActivity extends Activity {
                     if (box != null) box.setText(boxText(keyPref, winPref));
                     return;
                 }
-                // A store screen is not a button we can bind. It is what an uninstalled
-                // app's button opens (Netflix without Netflix installed), and it is also
-                // where several branded buttons pass through. Binding it would fire on
-                // every store screen the user later browses.
+                // A store screen is not a button we can bind. An uninstalled app's button
+                // opens one (Netflix without Netflix installed), and several branded
+                // buttons pass through one. Binding it would fire on every store screen
+                // the user later browses.
                 if (pkg.equals(APPS_GRID_PKG) && !HijackService.isAppsGridWindow(activity)) {
                     Toast.makeText(getApplicationContext(),
-                            R.string.map_app_not_installed, Toast.LENGTH_LONG).show();
+                            R.string.map_button_opens_store, Toast.LENGTH_LONG).show();
                     HijackService.bringConfigToFrontDelayed();
                     return;
                 }
