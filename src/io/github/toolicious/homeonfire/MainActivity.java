@@ -85,6 +85,8 @@ public class MainActivity extends Activity {
     private LinearLayout customRowsHost;
     /** The content-app warning while it is up, so a second resume cannot stack another one. */
     private android.app.AlertDialog warnDialog;
+    /** The "that button opens the home screen" message while it is up, so a resume cannot stack another. */
+    private android.app.AlertDialog openHomeDialog;
     /**
      * True while we are dismissing the dialog only because the Activity is going away
      * (a mapped app destroyed us mid-learn). The dismiss handler then keeps the state
@@ -130,6 +132,19 @@ public class MainActivity extends Activity {
     private static String sPendingWarnWindow;
 
     /**
+     * A branded button learned mid-attempt that only opened the Amazon home shell, so it
+     * has no app window to bind. Shown as a dialog once the config screen is back in front
+     * (the home screen took it down). Static for the same reason as the warning above.
+     */
+    private static boolean sPendingHomeShellMsg;
+
+    /** Amazon's home-shell packages, the regular launcher and the kids home. Declared
+     * before {@link #LEARN_IGNORE_PKGS} so that array can reference them. Both are what
+     * HijackService.isAmazonHomeWindow treats as Amazon home. */
+    private static final String AMAZON_HOME_PKG = "com.amazon.tv.launcher";
+    private static final String AMAZON_KIDS_HOME_PKG = "com.amazon.tahoe";
+
+    /**
      * Shell / navigation surfaces that must never be captured as a mapped button
      * during learn: Amazon home, the long-press side panel (Fire OS 8 Quick Settings),
      * and Settings / the Fire OS 6-7 long-press HUD. The target launcher and our own
@@ -137,7 +152,8 @@ public class MainActivity extends Activity {
      * mid-learn means the user bailed (e.g. long-pressed Home), so we cancel, not bind.
      */
     private static final String[] LEARN_IGNORE_PKGS = {
-            "com.amazon.tv.launcher",         // Amazon home shell
+            AMAZON_HOME_PKG,                  // Amazon home shell
+            AMAZON_KIDS_HOME_PKG,             // Amazon Kids home shell
             "com.amazon.tv.quicksettings.ui", // long-press side panel (Fire OS 8)
             "com.amazon.tv.settings.v2",      // Settings and the Fire OS 6/7 long-press HUD
     };
@@ -1555,6 +1571,16 @@ public class MainActivity extends Activity {
                 // results: they mean the user bailed. Ignore, don't bind.
                 if (isIgnoredLearnWindow(pkg)) {
                     if (box != null) box.setText(boxText(keyPref, winPref));
+                    // A branded button that only opens the Amazon home screen (e.g. the
+                    // Live TV button on some Fire OS 8 builds) has no app window to bind,
+                    // and we could not tell it apart from Home anyway. Say so, and pull the
+                    // config back to the front since the home screen took over. The other
+                    // ignored surfaces (Settings, the long-press panel) usually mean the
+                    // user bailed mid-learn, so they stay silent.
+                    if (AMAZON_HOME_PKG.equals(pkg) || AMAZON_KIDS_HOME_PKG.equals(pkg)) {
+                        sPendingHomeShellMsg = true;
+                        HijackService.bringConfigToFrontDelayed();
+                    }
                     return;
                 }
                 // A store screen is not a button we can bind. An uninstalled app's button
@@ -1735,6 +1761,7 @@ public class MainActivity extends Activity {
                     }
                 })
                 .show();
+        leftAlignDialogMessage(warnDialog);
         warnDialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
             @Override
             public void onDismiss(android.content.DialogInterface d) {
@@ -1747,6 +1774,52 @@ public class MainActivity extends Activity {
     private void clearPendingWarn() {
         sPendingWarnSlot = -1;
         sPendingWarnWindow = null;
+    }
+
+    /**
+     * Shows the full dialog for a branded button that only opened the Amazon home shell,
+     * so the user actually reads why nothing was mapped instead of a toast flashing past.
+     * Driven off {@link #sPendingHomeShellMsg} so {@link #onResume} can put it up after the
+     * home screen took this screen down, the same way {@link #showContentAppWarning} does.
+     */
+    private void showOpensHomeMessage() {
+        if (!sPendingHomeShellMsg) return;
+        if (openHomeDialog != null && openHomeDialog.isShowing()) return;
+        openHomeDialog = new android.app.AlertDialog.Builder(this)
+                .setIcon(R.drawable.ic_logo)
+                .setTitle(R.string.app_name)
+                .setMessage(R.string.map_button_opens_home)
+                .setPositiveButton(R.string.info_dialog_ok,
+                        new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        sPendingHomeShellMsg = false;
+                    }
+                })
+                .setOnCancelListener(new android.content.DialogInterface.OnCancelListener() {
+                    @Override
+                    public void onCancel(android.content.DialogInterface d) {
+                        sPendingHomeShellMsg = false;   // Back dismisses it too
+                    }
+                })
+                .show();
+        leftAlignDialogMessage(openHomeDialog);
+        openHomeDialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(android.content.DialogInterface d) {
+                if (openHomeDialog == d) openHomeDialog = null;
+            }
+        });
+    }
+
+    /**
+     * Left-aligns an AlertDialog's message text. The platform centers a dialog message by
+     * default on Fire OS, which reads badly for a full sentence; the title stays centered.
+     */
+    private static void leftAlignDialogMessage(android.app.AlertDialog d) {
+        if (d == null) return;
+        android.widget.TextView msg = d.findViewById(android.R.id.message);
+        if (msg != null) msg.setGravity(android.view.Gravity.START);
     }
 
     /** Commits a window binding to a slot (clearing its keycode) and refreshes the box. */
@@ -2273,6 +2346,8 @@ public class MainActivity extends Activity {
         processPendingLearn();
         // An app that re-launched over the warning took it down with this screen. Ask again.
         showContentAppWarning();
+        // Same story for the "that button opens the home screen" message.
+        showOpensHomeMessage();
     }
 
     @Override
@@ -2289,10 +2364,15 @@ public class MainActivity extends Activity {
             warnDialog.dismiss();
             warnDialog = null;
         }
+        if (openHomeDialog != null) {
+            openHomeDialog.dismiss();
+            openHomeDialog = null;
+        }
         // Unless the user left on purpose, in which case an unanswered question or an
         // unfinished learn must not ambush them the next time they open this screen.
         if (isFinishing()) {
             clearPendingWarn();
+            sPendingHomeShellMsg = false;
             sPendingSlot = -1;
             sPendingWindow = null;
         }

@@ -86,6 +86,7 @@
     <string name="redirect_learn_warn_add">Map anyway</string>
     <string name="redirect_learn_warn_cancel">Cancel</string>
     <string name="map_button_opens_store">That button opens an Amazon Appstore page, not an app, so there is nothing to map. If the app is not installed, install it first and try again.</string>
+    <string name="map_button_opens_home">That button opened the Amazon home screen, not an app, so there\'s nothing to map. Make sure the app this button should open is installed and set up so it opens when you press the button. Only then can the button be redirected.</string>
 
     <!-- Friendly names for bound launch keys, shown on the custom-launch-key row. -->
     <string name="key_red">Red</string>

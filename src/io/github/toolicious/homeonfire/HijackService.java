@@ -419,12 +419,6 @@ public class HijackService extends AccessibilityService {
     private int pendingButtonRelaunches = 0;
     private static final long BUTTON_LAUNCH_GRACE_MS = 5_000L;
     private static final int BUTTON_MAX_RELAUNCHES = 2;
-    /**
-     * After this much of the grace window, an Amazon home that covers the app while it is
-     * already on screen counts as a Home press again. The grid closes within about a
-     * second of the launch, so a later arrival over a visible app is the user.
-     */
-    private static final long BUTTON_SETTLE_MS = 1_500L;
     /** When the last relaunch of that app was issued, so a second Amazon home right after does not stack another. */
     private long pendingRelaunchAt = 0L;
     private static final long RELAUNCH_IN_FLIGHT_MS = 1_500L;
@@ -831,8 +825,7 @@ public class HijackService extends AccessibilityService {
      *  - an active bypass ends a mapped button's grace window (the pending app is dropped)
      *  - inside that grace window the arrival is the button's own screen closing: the app
      *    is launched again (masked on Fire OS 7, at most twice, not while a relaunch is
-     *    still in flight), unless the app was already on screen and the settle time has
-     *    passed, which makes it a Home press after all
+     *    still in flight)
      *  - the Home replacement being off, or no target, ends it here
      *  - a launch of the target still held by the app-switch lock (mask armed): skipped
      *  - arrivals from within Amazon's own home shell (launcher, settings,
@@ -860,17 +853,7 @@ public class HijackService extends AccessibilityService {
         }
         if (pendingButtonApp != null && now - lastWindowLaunchAt < BUTTON_LAUNCH_GRACE_MS) {
             String app = pendingButtonApp;
-            // Unless the app was already on screen and Amazon home came over it well after
-            // the grid had closed: that is a Home press and is handled as one. On Fire
-            // OS 7 the grid closes within about a second of the launch; a Home press was
-            // seen two seconds after it.
-            if (app.equals(prev) && now - lastWindowLaunchAt >= BUTTON_SETTLE_MS) {
-                if (prefs.isVerboseLogging()) {
-                    Log.i(TAG, "Amazon home over " + app + " after " + (now - lastWindowLaunchAt)
-                            + "ms counts as a Home press");
-                }
-                pendingButtonApp = null;
-            } else if ((maskArmed && app.equals(maskTargetPkg))
+            if ((maskArmed && app.equals(maskTargetPkg))
                     || now - pendingRelaunchAt < RELAUNCH_IN_FLIGHT_MS) {
                 // Fire OS 7 keeps the mask armed while the relaunch sits in the app-switch
                 // lock; Fire OS 8 has no mask, so a short time window stands in for it.

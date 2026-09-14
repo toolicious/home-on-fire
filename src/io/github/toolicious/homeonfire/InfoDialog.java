@@ -125,9 +125,13 @@ public final class InfoDialog {
         diLp.gravity = Gravity.CENTER_HORIZONTAL;
         body.addView(deviceInfo, diLp);
 
-        body.addView(makeCenteredText(host,
+        // The description is a sentence, not a heading, so it reads left-aligned rather
+        // than centered. The logo, name, version and links above stay centered.
+        TextView desc = makeCenteredText(host,
                 KeyBadges.wrap(host, host.getString(R.string.info_dialog_description)),
-                14, Colors.NEUTRAL));
+                14, Colors.NEUTRAL);
+        desc.setGravity(Gravity.START);
+        body.addView(desc);
 
         // Wrap in a ScrollView so the OK button is never clipped off the
         // bottom on short screens or large display-font scales (AlertDialog
