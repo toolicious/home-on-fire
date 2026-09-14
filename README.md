@@ -85,8 +85,8 @@ adb shell pm grant io.github.toolicious.homeonfire android.permission.WRITE_SECU
 - <kbd>☰ Menu</kbd> long-press (~ 500 ms): opens our config screen.
 - A **custom-mapped button** (if set up): opens your target launcher, or
   jumps to Amazon home, instantly.
-- <kbd>⊞ Apps</kbd> button (if enabled): opens your target launcher, after a
-  brief flash of Amazon's app grid.
+- A mapped branded button (<kbd>⊞ Apps</kbd> and similar): opens the app you
+  picked, after a brief flash.
 
 **Privacy:** fully local. No network access, no telemetry, no
 analytics, no data collection of any kind. See
@@ -103,16 +103,17 @@ work on older Fire OS 8.x builds out of the box. The app targets
 Android API 34 with a minimum of API 21.
 
 **<ins>Fire OS 7</ins>: Supported**<br>
-Verified on Fire OS 7.7.1.4 and confirmed working across multiple
-community reports. The redirect behaves differently here: Android 9
-holds back a background app launch for about 5 seconds after Home is
-pressed (the app-switch lock), so your target can only appear ~5 seconds
-later. Home on Fire covers that gap with a short loading animation that
-fades into your launcher, so instead of Amazon home for 5 seconds you
-get a loading screen that hands off to your launcher. The custom-button
-and Apps-button shortcuts (see [Features](#features)) sidestep this delay
-entirely, opening your launcher instantly. Fire OS 8 has no such delay,
-so the animation does not appear there.
+Verified on Fire OS 7.7.1.4 and 7.7.1.5, confirmed across community
+reports. Android 9 holds a Home-triggered launch for up to 5 seconds
+(the app-switch lock), so your target appears a few seconds late; Home on
+Fire covers the wait with a loading animation (or a plain black screen)
+that fades into your launcher. Key-code shortcuts (see
+[Features](#features)) skip the delay and open instantly. Fire OS 8 has
+no such delay.
+
+If you map a branded button like <kbd>⊞ Apps</kbd> to open an app, then
+for about 5 seconds after it a <kbd>⌂ Home</kbd> press may reopen that app
+instead of your launcher; press Home again for the launcher.
 
 <p align="center">
   <img src="docs/loading-animation.png" alt="Home on Fire loading animation" width="640"><br>
@@ -159,10 +160,11 @@ it stays the OS-level home activity.
 
 | | |
 |---|---|
-| **Replace <kbd>⌂ Home</kbd> button** | Short-press in a third-party app opens your target instead of Amazon home. Double-press within 1 s escapes to Amazon home (leave a short pause between the two presses; a mouse-click-speed double-press may just reopen the target). Long-press is the most reliable escape and toggles between target and Amazon home. <kbd>↩ Back</kbd> or <kbd>◉ OK</kbd> on the focused Home icon returns to target. |
+| **Replace <kbd>⌂ Home</kbd> button** | Short-press in a third-party app opens your target instead of Amazon home. <kbd>↩ Back</kbd> or <kbd>◉ OK</kbd> on the focused Home icon returns to target. |
+| **Escape to Amazon home** | Long-press <kbd>⌂ Home</kbd> (most reliable) or double-press it about a second apart to reach the real Amazon home. Each can be turned off separately. |
 | **Launch on boot** | Optionally launches the target app right after device boot and on wake from standby, so the device shows your launcher instead of Amazon home in both cases. |
 | **<kbd>☰ Menu</kbd> long-press shortcut** | Hold the <kbd>☰ Menu</kbd> button for half a second from inside the target or any Amazon screen. Opens our config screen. |
-| **Map custom buttons** | Bind a spare remote button to open your target launcher directly, and another to jump to the Amazon home screen. Opt-in, off by default. Buttons that send a key code (color, number, channel ±, subtitles, teletext, media keys) open instantly, with no Fire OS 7 Home delay. Buttons that instead open an app (<kbd>⊞ Apps</kbd>, Live TV, Netflix and similar) are redirected: that app flashes up briefly before your launcher takes over. The **Custom** box on the same row takes up to six further buttons, each opening any app you pick. |
+| **Map custom buttons** | Opt-in, off by default. Bind spare buttons: one to your launcher, one to Amazon home, and up to six **Custom** ones to any app. Key-code buttons (color, number, channel, media) are instant and reliable. App-opening buttons (<kbd>⊞ Apps</kbd>, Live TV, Netflix) are detected by what they open, so they flash briefly and a fast press or slow device can miss. A button that only opens Amazon home (some Fire OS 8 Live TV buttons) can't be mapped, and the app says so. |
 
 ---
 
@@ -403,6 +405,13 @@ Manual pipeline if you'd rather not use the script:
   for example) is set to claim <kbd>⌂ Home</kbd> itself, because the
   long-press panel is the only way to switch profiles there. Turn
   **Replace ⌂ Home button** off to get out.
+- **On Fire OS 7, ⌂ Home is briefly tied up after a mapped app button.** For
+  ~5 s after <kbd>⊞ Apps</kbd> (or similar) opens its app, a Home press may
+  reopen that app; press again for your launcher. Key-code buttons have no
+  such window.
+- **Buttons that only open Amazon home can't be mapped.** Some Fire OS 8 Live
+  TV buttons open Amazon's home screen, not a distinct app, so it can't be
+  told from Home. The app shows a message if you try.
 
 ---
 
