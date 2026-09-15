@@ -973,6 +973,7 @@ public class HijackService extends AccessibilityService {
                     + " pkg=" + (scan == null ? "none" : scan.pkg)
                     + " nodes=" + (scan == null ? -1 : scan.nodes)
                     + " withViewId=" + (scan == null ? -1 : scan.withViewId)
+                    + " focus=" + shellFocus(scan)
                     + " ids=[" + shellIdSample(scan) + "]");
             // The launcher is still building its tree here, so those ids are the content
             // rows and nothing else. Measured 2026-09-15: the navigation bar was missing
@@ -1691,6 +1692,13 @@ public class HijackService extends AccessibilityService {
          * it used to fill the sample before the walk ever reached the navigation bar.
          */
         final java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<String>();
+        /**
+         * View id of the node that holds input focus, first one wins. The launcher marks
+         * its active tab that way, so this says which SECTION of a screen is open where
+         * the set of tabs alone cannot: the Live hub and the home screen carry the same
+         * nav bar and differ only in which tab is focused. Diagnosis only so far.
+         */
+        String focusedId;
         SectionScan(boolean full) { this.full = full; }
     }
 
@@ -1741,6 +1749,9 @@ public class HijackService extends AccessibilityService {
             }
             if (scan.section == SECTION_UNKNOWN) {
                 scan.section = sectionForViewId(rawId.toString());
+            }
+            if (scan.focusedId == null && node.isFocused()) {
+                scan.focusedId = rawId.toString();
             }
         }
         if (!scan.full && scan.section != SECTION_UNKNOWN) return;
@@ -1814,6 +1825,7 @@ public class HijackService extends AccessibilityService {
         Log.i(TAG, "Section probe: pkg=" + scan.pkg
                 + " nodes=" + scan.nodes + " withViewId=" + scan.withViewId
                 + " section=" + sectionName(scan.section)
+                + " focus=" + shellFocus(scan)
                 + " ids=[" + shellIdSample(scan) + "]");
     }
 
@@ -1851,10 +1863,20 @@ public class HijackService extends AccessibilityService {
                 Log.i(TAG, "Amazon home settled: pkg=" + scan.pkg
                         + " nodes=" + scan.nodes + " withViewId=" + scan.withViewId
                         + " section=" + sectionName(scan.section)
+                        + " focus=" + shellFocus(scan)
                         + " ids=[" + shellIdSample(scan) + "]");
             }
         };
         mainHandler.postDelayed(settledScanRunnable, SECTION_SETTLED_SCAN_MS);
+    }
+
+    /** The focused view id, for Amazon's own shell only. See {@link #shellIdSample}. */
+    private static String shellFocus(SectionScan scan) {
+        if (scan == null) return "none";
+        if (!AMAZON_LAUNCHER.equals(scan.pkg) && !KIDS_LAUNCHER.equals(scan.pkg)) {
+            return "skipped";
+        }
+        return scan.focusedId == null ? "none" : scan.focusedId;
     }
 
     /**
