@@ -664,7 +664,7 @@ public class MainActivity extends Activity {
         return pair;
     }
 
-    /** Enables/greys one switch block and drops it out of the focus order when unusable. */
+    /** Enables/grays one switch block and drops it out of the focus order when unusable. */
     private void setPairUsable(LinearLayout pair, boolean usable, View fallbackRow) {
         if (pair == null) return;
         boolean wasFocused = pair.isFocused();
@@ -882,7 +882,7 @@ public class MainActivity extends Activity {
                         && getMeasuredWidth() < side) {
                     // Measure again at the square width instead of just reporting it: the
                     // text layout is built inside onMeasure, so overriding the dimension
-                    // afterwards would leave the glyph centred in the old, narrow layout.
+                    // afterwards would leave the glyph centered in the old, narrow layout.
                     super.onMeasure(
                             View.MeasureSpec.makeMeasureSpec(side, View.MeasureSpec.EXACTLY),
                             heightSpec);
@@ -1051,7 +1051,7 @@ public class MainActivity extends Activity {
         box.setTextColor(Colors.WHITE);
         box.setGravity(Gravity.CENTER);
         // Just a floor so a very short value still reads as a box. Anything wider is
-        // sized by its padding alone; a larger minimum would centre the text in the
+        // sized by its padding alone; a larger minimum would center the text in the
         // leftover space and widen the side gaps beyond BOX_PAD_H again.
         box.setMinWidth(dp(56));
         box.setPadding(dp(BOX_PAD_H), dp(ROW_PAD_V), dp(BOX_PAD_H), dp(ROW_PAD_V));

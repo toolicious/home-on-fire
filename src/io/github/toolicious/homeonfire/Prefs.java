@@ -177,7 +177,7 @@ public class Prefs {
     public static final String NO_WINDOW = "";
 
     // The two escape gestures that leave the target for Amazon's home. Both default to
-    // on (the behaviour that shipped before they were configurable). They are separate
+    // on (the behavior that shipped before they were configurable). They are separate
     // because the complaints about them are separate: the long-press swallows the panel
     // a remote's settings button also opens (issue #5) and hides its tiles (issue #7),
     // while the double-press surprises users who simply press Home twice impatiently.
