@@ -1777,6 +1777,16 @@ public class MainActivity extends Activity {
     }
 
     /**
+     * True while a learn result still needs this screen: a captured window waiting to be
+     * bound, an unanswered content-app warning, or the "that button opens the home screen"
+     * message. The service polls this so it can stop pulling the config back to the front
+     * the moment the user has dealt with it.
+     */
+    static boolean hasPendingLearn() {
+        return sPendingSlot >= 0 || sPendingWarnSlot >= 0 || sPendingHomeShellMsg;
+    }
+
+    /**
      * Shows the full dialog for a branded button that only opened the Amazon home shell,
      * so the user actually reads why nothing was mapped instead of a toast flashing past.
      * Driven off {@link #sPendingHomeShellMsg} so {@link #onResume} can put it up after the

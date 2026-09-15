@@ -274,6 +274,10 @@ public class HijackService extends AccessibilityService {
             }
         }
         registerScreenOnReceiver();
+        // Delayed so whatever is on screen has finished building its tree.
+        mainHandler.postDelayed(new Runnable() {
+            @Override public void run() { logSectionProbe(); }
+        }, SECTION_PROBE_DELAY_MS);
     }
 
     /** Set while a screen-on receiver is registered; cleared on unbind. */
@@ -422,6 +426,87 @@ public class HijackService extends AccessibilityService {
     /** When the last relaunch of that app was issued, so a second Amazon home right after does not stack another. */
     private long pendingRelaunchAt = 0L;
     private static final long RELAUNCH_IN_FLIGHT_MS = 1_500L;
+
+    /**
+     * When the Apps grid last put up a window. The grid is the ONE surface that starts
+     * Amazon home by itself: venezia fires {@code HomeActivity_vNext} with
+     * {@code cat=[HOME]} a few hundred ms after the grid (measured 2026-09-15 on Fire
+     * OS 8: 230 ms to just under a second). Prime Video, Netflix and Disney+ never do
+     * this, so only the grid needs the guard.
+     *
+     * The primary signal, and the more reliable one. Measured 2026-09-15 over six Apps
+     * presses, it was right every time, while the window content still read as the Home
+     * screen on four of them. {@link #scanActiveWindow} only adds to it, for the press
+     * whose grid window never arrived here at all.
+     *
+     * Not enough on its own for two reasons: the grid does not always announce a window,
+     * and its hand-over can produce more than one Amazon-home arrival (measured: a second
+     * arrival 145 ms after the first), so the guard has to be a time span rather than a
+     * single token.
+     */
+    private long lastAppsGridAt = 0L;
+    /**
+     * How long that hand-over may take. Sized against the measured worst case of just
+     * under a second, with room to spare, because the two mistakes are not equally bad:
+     * too short brings back the wrong redirect on EVERY Apps press, too long costs one
+     * Home press in the rare case where the hand-over never arrives at all.
+     */
+    private static final long APPS_HANDOVER_MS = 2_000L;
+
+    /**
+     * How long after the Apps grid an "Apps screen" reading is still taken as proof that
+     * the user pressed Apps. Longer than {@link #APPS_HANDOVER_MS} because the reading is
+     * evidence in its own right, so it can cover a press whose grid window never reached
+     * us. Bounded all the same: the launcher goes on showing the Apps screen indefinitely
+     * once it is up, and without a bound a real Home press landing on that leftover screen
+     * would be swallowed with no second chance, since a launcher that is already in front
+     * fires no further window event.
+     */
+    private static final long APPS_SECTION_TRUST_MS = 10_000L;
+
+    /** {@link #scanActiveWindow}: the launcher shows its Apps screen. */
+    private static final int SECTION_APPS = 1;
+    /** {@link #scanActiveWindow}: the launcher shows its Home screen. */
+    private static final int SECTION_HOME = 2;
+    /** {@link #scanActiveWindow}: no marker matched, so we do not know this launcher. */
+    private static final int SECTION_UNKNOWN = 0;
+
+    /**
+     * View-id prefixes that name the launcher's Apps screen, and the ones that name its
+     * Home screen. Amazon's launcher rebuilds its top navigation bar per screen, so which
+     * tabs are present says which screen this is, independent of language, of tab order
+     * and of how fast the device is.
+     *
+     * Observed on Fire OS 8 (2026-09-15, Compose UI): the Apps screen carries
+     * {@code nav-tab-apps_for_you_tab} and {@code nav-tab-apps_categories_tab}, the Home
+     * screen carries {@code nav-tab-movies_and_tv_home_tab} plus movies, shows, free,
+     * guide and sports. Only the burger and the search tab appear on both, so they are
+     * not listed. Prefixes rather than whole ids, so a renamed or added tab inside the
+     * same family still matches.
+     *
+     * Several launcher generations can sit here side by side: every entry is tried and
+     * the first hit wins. Supporting another Fire OS build is one more string, not a code
+     * change, and a build that matches nothing falls back to {@link #APPS_HANDOVER_MS}.
+     *
+     * Only the Apps table decides anything. A Home reading is written to the log and
+     * nothing else, because the launcher has not repainted when we read it and still
+     * reports the previous screen; see {@link #handleAmazonHomeArrival}. The Home entries
+     * earn their place by telling "this launcher is one we know, and it is not on Apps"
+     * apart from "we cannot read this launcher at all" in a report.
+     */
+    private static final String[] APPS_SECTION_VIEW_IDS = {
+            "nav-tab-apps",
+    };
+    private static final String[] HOME_SECTION_VIEW_IDS = {
+            "nav-tab-movies_and_tv",
+    };
+
+    /**
+     * Depth cap for that scan. The launcher's tree is 11 levels deep on Fire OS 8 and the
+     * tabs sit near the top, so this only stops a pathological tree from costing us the
+     * main thread.
+     */
+    private static final int SECTION_SCAN_MAX_DEPTH = 14;
 
     /**
      * Wall-clock time and code of the most recent key event we saw,
@@ -629,6 +714,11 @@ public class HijackService extends AccessibilityService {
                     && prefs.isLaunchKeyEnabled() && prefs.isVerboseLogging()) {
                 Log.i(TAG, "Appstore screen ignored, not the Apps grid: " + clsStr);
             }
+            // Remember the Apps grid whether or not a slot is bound to it, so the Amazon
+            // home it hands over to can be told from a Home press in both cases.
+            if (AMAZON_APPS_GRID.equals(pkgStr) && isAppsGridWindow(clsStr)) {
+                lastAppsGridAt = System.currentTimeMillis();
+            }
             boolean mapOn = prefs.isLaunchKeyEnabled();
             String launchWin = prefs.getLaunchWindow();
             boolean matchLaunch = windowMatches(pkgStr, clsStr, launchWin);
@@ -826,7 +916,11 @@ public class HijackService extends AccessibilityService {
      *  - inside that grace window the arrival is the button's own screen closing: the app
      *    is launched again (masked on Fire OS 7, at most twice, not while a relaunch is
      *    still in flight)
+     *  - the launcher showing its Apps screen with a slot bound to the Apps button, and
+     *    no venezia window to have driven it: the slot runs from here
      *  - the Home replacement being off, or no target, ends it here
+     *  - an Apps press rather than a Home press, by section marker or by the grid window
+     *    that came just before: left alone on Amazon's Apps screen
      *  - a launch of the target still held by the app-switch lock (mask armed): skipped
      *  - arrivals from within Amazon's own home shell (launcher, settings,
      *    quicksettings, none of which expose a Leanback launcher entry) after a recent
@@ -841,6 +935,51 @@ public class HijackService extends AccessibilityService {
     private void handleAmazonHomeArrival() {
         String prev = previousForegroundPkg;
         long now = System.currentTimeMillis();
+        // Which screen the launcher is actually showing. Read once per arrival and reused
+        // below, because it walks the node tree.
+        // With verbose logging on, the same walk also collects the distinct view ids, so
+        // a report from a launcher we have no markers for still shows what it calls its
+        // tabs. Short of that sample there is no way to learn another Fire OS build's
+        // navigation bar, since we cannot read that device ourselves.
+        boolean verbose = prefs.isVerboseLogging();
+        SectionScan scan = scanActiveWindow(verbose);
+        int section = scan == null ? SECTION_UNKNOWN : scan.section;
+        // Apps press or Home press. The Apps button and the Home key both end in
+        // HomeActivity_vNext, since venezia starts that activity itself, so the window
+        // event cannot separate them.
+        //
+        // The section is read the instant that window arrives, BEFORE the launcher has
+        // repainted, so right after an Apps press it often still reports the Home screen
+        // (measured 2026-09-15: four of six presses). A Home reading therefore carries no
+        // information and must never cancel the grid window, which had all six right.
+        //
+        // An Apps reading does carry information, because nothing but an Apps press puts
+        // those tabs up, and it covers the press where no venezia window reached us at
+        // all. It still gets a time bound: the launcher keeps showing Apps long after the
+        // press (measured: 7.8 s later), and an unbounded reading would swallow a real
+        // Home press that lands on that leftover screen.
+        boolean appsSection = section == SECTION_APPS
+                && now - lastAppsGridAt < APPS_SECTION_TRUST_MS;
+        boolean appsHandover = appsSection || now - lastAppsGridAt < APPS_HANDOVER_MS;
+        if (verbose) {
+            // pkg is the window we actually WALKED, which is not always Amazon's: a
+            // second arrival can land after our own redirect has already put the target
+            // launcher in front, and then these counts describe that instead.
+            Log.i(TAG, "Amazon home arrival: section="
+                    + sectionName(section)
+                    + " appsSection=" + appsSection
+                    + " appsHandover=" + appsHandover
+                    + " sinceGrid=" + (now - lastAppsGridAt) + "ms"
+                    + " pkg=" + (scan == null ? "none" : scan.pkg)
+                    + " nodes=" + (scan == null ? -1 : scan.nodes)
+                    + " withViewId=" + (scan == null ? -1 : scan.withViewId)
+                    + " ids=[" + shellIdSample(scan) + "]");
+            // The launcher is still building its tree here, so those ids are the content
+            // rows and nothing else. Measured 2026-09-15: the navigation bar was missing
+            // from every arrival, and two of them handed us no window at all. Look again
+            // once it has settled, for the log only.
+            scheduleSettledScan();
+        }
         // A mapped button launched an app a moment ago. This Amazon home comes from the
         // button's own screen (the Apps grid) closing, not from a Home press, and it can
         // arrive before or after the app's first window, once or twice. Hijacking would
@@ -883,10 +1022,33 @@ public class HijackService extends AccessibilityService {
             }
         }
 
+        // An Apps press with a slot bound to it, where no venezia window ever reached us.
+        // The grid does not always announce one (measured 2026-09-15: one of six presses
+        // produced no venezia event at all), and then this Amazon home is the only trace
+        // of the press. The section says it was Apps, so run the slot from here instead of
+        // letting the press fall through to the Home redirect. Belongs to the mapping, not
+        // to the Home replacement, so it runs with the replacement switched off too.
+        if (appsSection && pendingButtonApp == null && now >= bypassUntil
+                && now - lastWindowLaunchAt >= BUTTON_LAUNCH_GRACE_MS
+                && prefs.isLaunchKeyEnabled() && dispatchAppsSlot()) {
+            return;
+        }
+
         if (!prefs.isHijackEnabled()) return;
 
         String target = prefs.getTargetPackage();
         if (target == null || target.isEmpty() || target.equals(getPackageName())) return;
+
+        // The Apps button with nothing bound to it. The user asked for Amazon's Apps
+        // screen, not for Home, so leave them there.
+        if (appsHandover) {
+            if (prefs.isVerboseLogging()) {
+                Log.i(TAG, "Apps screen, not a Home press ("
+                        + (appsSection ? "section markers, " : "")
+                        + "grid " + (now - lastAppsGridAt) + "ms ago)");
+            }
+            return;
+        }
 
         // The last hijack's launch is still held by the app-switch lock (mask armed for
         // this target). Another start would only queue up behind it.
@@ -1056,7 +1218,12 @@ public class HijackService extends AccessibilityService {
         // Nothing to re-assert after a launch that never happened (target uninstalled).
         if (!launchTarget(appToLaunch, reason, false)) return;
         lastWindowLaunchAt = now;
-        pendingButtonApp = appToLaunch;
+        // Only the Apps grid gets the grace window. It is the one surface that starts
+        // Amazon home by itself, so only there can an arrival be the button rather than
+        // the user. Measured 2026-09-15 with Prime Video, Netflix and Disney+ all mapped:
+        // every single Amazon home after those three followed a real Home key, so a grace
+        // window there did nothing but swallow Home presses, up to three in a row.
+        pendingButtonApp = AMAZON_APPS_GRID.equals(brandedPkg) ? appToLaunch : null;
         pendingButtonRelaunches = 0;
         pendingRelaunchAt = 0L;
         // Some branded apps keep launching activities that re-cover the target right
@@ -1506,6 +1673,241 @@ public class HijackService extends AccessibilityService {
         return AMAZON_LAUNCHER.equals(currentForegroundPackage());
     }
 
+    /** What one walk of the active window found. See {@link #scanForSection}. */
+    private static final class SectionScan {
+        /**
+         * Keep walking past the first marker, so the counts and the id sample below cover
+         * the whole tree. Set whenever verbose logging is on, because that sample is the
+         * only way to see what a launcher we have no markers for calls its own tabs.
+         */
+        final boolean full;
+        int section = SECTION_UNKNOWN;
+        String pkg;
+        int nodes;
+        int withViewId;
+        /**
+         * Distinct view ids, in the order first seen. A set rather than a list: the
+         * launcher reports the same tile id once per tile on screen, and twenty copies of
+         * it used to fill the sample before the walk ever reached the navigation bar.
+         */
+        final java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<String>();
+        SectionScan(boolean full) { this.full = full; }
+    }
+
+    /**
+     * Which screen the Amazon launcher is showing right now, from the view ids in its
+     * live node tree. See {@link #APPS_SECTION_VIEW_IDS} for what is matched and why.
+     *
+     * {@code full} decides whether the walk stops at the first section marker, which is
+     * all the redirect itself needs, or covers the whole tree and collects the distinct
+     * ids for the log. The first marker found wins either way, so the section does not
+     * depend on which mode ran.
+     *
+     * Returns null only when the system hands us no window at all, and leaves the section
+     * {@link #SECTION_UNKNOWN} when the tree is not up yet or this launcher build carries
+     * none of our markers. Callers have to keep working in both cases. A walk that throws
+     * part way still returns what it had by then, because a node can go stale mid-walk
+     * while the launcher is still building its tree.
+     */
+    private SectionScan scanActiveWindow(boolean full) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return null;
+        SectionScan scan = new SectionScan(full);
+        try {
+            CharSequence pkg = root.getPackageName();
+            scan.pkg = pkg != null ? pkg.toString() : null;
+            scanForSection(root, 0, scan);
+        } catch (Exception ignored) {
+            // A partial answer beats none.
+        } finally {
+            root.recycle();
+        }
+        return scan;
+    }
+
+    /** Depth-first hunt for a section marker, see {@link #scanActiveWindow}. */
+    private void scanForSection(AccessibilityNodeInfo node, int depth, SectionScan scan) {
+        if (node == null || depth > SECTION_SCAN_MAX_DEPTH) return;
+        scan.nodes++;
+        // Empty counts as no id at all. Some launchers hand out "" for every node instead
+        // of null (measured 2026-09-15: 47 of 49 nodes), which used to count as an id and
+        // then collapse to one blank entry in the set, so the log read "47 ids" next to an
+        // empty sample. No effect on the matching, since "" starts with no prefix.
+        CharSequence rawId = node.getViewIdResourceName();
+        if (rawId != null && rawId.length() > 0) {
+            scan.withViewId++;
+            if (scan.full && scan.ids.size() < SECTION_ID_SAMPLE_MAX) {
+                scan.ids.add(rawId.toString());
+            }
+            if (scan.section == SECTION_UNKNOWN) {
+                scan.section = sectionForViewId(rawId.toString());
+            }
+        }
+        if (!scan.full && scan.section != SECTION_UNKNOWN) return;
+        int children = node.getChildCount();
+        for (int i = 0; i < children; i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child == null) continue;
+            try {
+                scanForSection(child, depth + 1, scan);
+            } finally {
+                child.recycle();
+            }
+            if (!scan.full && scan.section != SECTION_UNKNOWN) return;
+        }
+    }
+
+    /** The section a single view id names, or {@link #SECTION_UNKNOWN} for any other. */
+    private static int sectionForViewId(String viewId) {
+        // Compose test tags arrive bare ("nav-tab-apps_for_you_tab"), real View ids fully
+        // qualified ("com.amazon.tv.launcher:id/nav_container"). Compare on the part after
+        // the last slash so one prefix covers both shapes.
+        int slash = viewId.lastIndexOf('/');
+        String id = slash >= 0 ? viewId.substring(slash + 1) : viewId;
+        for (String p : APPS_SECTION_VIEW_IDS) {
+            if (id.startsWith(p)) return SECTION_APPS;
+        }
+        for (String p : HOME_SECTION_VIEW_IDS) {
+            if (id.startsWith(p)) return SECTION_HOME;
+        }
+        return SECTION_UNKNOWN;
+    }
+
+    /** Log-friendly name for a {@link #scanActiveWindow} section result. */
+    private static String sectionName(int section) {
+        if (section == SECTION_APPS) return "apps";
+        if (section == SECTION_HOME) return "home";
+        return "unknown";
+    }
+
+    /** How long after service start {@link #logSectionProbe} looks at the screen. */
+    private static final long SECTION_PROBE_DELAY_MS = 1_200L;
+    /**
+     * Cap on how many DISTINCT view ids a log line carries. Generous, because the point of
+     * the sample is to show the navigation bar of a launcher we have no markers for, and
+     * duplicates no longer eat the budget. One logcat message holds about 4000 bytes.
+     */
+    private static final int SECTION_ID_SAMPLE_MAX = 40;
+
+    /**
+     * Writes one line saying whether view ids reach us on this device at all, and what
+     * {@link #scanActiveWindow} makes of whatever is on screen at service start.
+     *
+     * Verbose only, and the walk is skipped with it off. What it answers, whether this
+     * device hands us view ids at all, is the first thing to establish when a report says
+     * the Apps button opens the wrong thing, and asking for verbose logging is part of
+     * that conversation anyway. Every Amazon-home arrival logs the same sample, so a
+     * tester who presses Home and Apps does not need to restart the service for this.
+     *
+     * Whatever happens to be on screen at service start is usually not Amazon's, so the
+     * ids are withheld there (see {@link #shellIdSample}). The counts still answer the
+     * question that matters, since {@code withViewId=0} says this device hands out no
+     * view ids no matter which app is in front.
+     */
+    private void logSectionProbe() {
+        if (prefs == null || !prefs.isVerboseLogging()) return;
+        SectionScan scan = scanActiveWindow(true);
+        if (scan == null) {
+            Log.i(TAG, "Section probe: no active window");
+            return;
+        }
+        Log.i(TAG, "Section probe: pkg=" + scan.pkg
+                + " nodes=" + scan.nodes + " withViewId=" + scan.withViewId
+                + " section=" + sectionName(scan.section)
+                + " ids=[" + shellIdSample(scan) + "]");
+    }
+
+    /**
+     * How long after an Amazon-home arrival {@link #scheduleSettledScan} looks again. The
+     * arrival fires while the launcher is still drawing, and its navigation bar is not in
+     * the tree yet (measured 2026-09-15: a Home press showed six content ids and no nav
+     * entry at all). Long enough for the bar to appear, short enough that the user has
+     * probably not moved on yet.
+     */
+    private static final long SECTION_SETTLED_SCAN_MS = 700L;
+
+    /** The pending settled scan, so a burst of arrivals logs once instead of three times. */
+    private Runnable settledScanRunnable = null;
+
+    /**
+     * Logs what the launcher looks like once it has finished drawing. Diagnosis only:
+     * nothing here feeds a decision, since by the time it runs the redirect is long made.
+     * It earns its place because the navigation bar is the one spot where a launcher names
+     * its own sections, and a device we cannot read ourselves has to tell us through a log.
+     */
+    private void scheduleSettledScan() {
+        if (mainHandler == null) return;
+        if (settledScanRunnable != null) mainHandler.removeCallbacks(settledScanRunnable);
+        settledScanRunnable = new Runnable() {
+            @Override
+            public void run() {
+                settledScanRunnable = null;
+                if (prefs == null || !prefs.isVerboseLogging()) return;
+                SectionScan scan = scanActiveWindow(true);
+                if (scan == null) {
+                    Log.i(TAG, "Amazon home settled: no active window");
+                    return;
+                }
+                Log.i(TAG, "Amazon home settled: pkg=" + scan.pkg
+                        + " nodes=" + scan.nodes + " withViewId=" + scan.withViewId
+                        + " section=" + sectionName(scan.section)
+                        + " ids=[" + shellIdSample(scan) + "]");
+            }
+        };
+        mainHandler.postDelayed(settledScanRunnable, SECTION_SETTLED_SCAN_MS);
+    }
+
+    /**
+     * The id sample, but written out for Amazon's own shell only. Any other package means
+     * we redirected before the scan ran, and that app's full id list would bury the line
+     * worth reading and put its internals into a log the reporter pastes in public
+     * (measured 2026-09-15: a file manager contributed 97 of them).
+     */
+    private static String shellIdSample(SectionScan scan) {
+        if (scan == null) return "";
+        if (!AMAZON_LAUNCHER.equals(scan.pkg) && !KIDS_LAUNCHER.equals(scan.pkg)) {
+            return "not Amazon's shell, skipped";
+        }
+        return idSample(scan);
+    }
+
+    /** The distinct view ids of a scan as one space-separated line for the log. */
+    private static String idSample(SectionScan scan) {
+        if (scan == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String id : scan.ids) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(id);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Runs whatever slot is bound to the Apps button, standing in for the window handler
+     * when venezia never announced a window. Returns true when a slot took the press.
+     *
+     * A slot set to "go to Amazon home" needs no action, because venezia has already put
+     * us there; reporting it as taken is what keeps the Home redirect off it.
+     */
+    private boolean dispatchAppsSlot() {
+        if (windowMatches(AMAZON_APPS_GRID, null, prefs.getLaunchWindow())) {
+            handleWindowLaunch(AMAZON_APPS_GRID);
+            return true;
+        }
+        if (windowMatches(AMAZON_APPS_GRID, null, prefs.getAmazonWindow())) {
+            if (prefs.isVerboseLogging()) {
+                Log.i(TAG, "Apps slot points at Amazon home, already there");
+            }
+            return true;
+        }
+        String customApp = customAppForWindow(AMAZON_APPS_GRID, null);
+        if (customApp != null) {
+            handleWindowLaunch(AMAZON_APPS_GRID, customApp, "Redirect from custom button");
+            return true;
+        }
+        return false;
+    }
+
     /**
      * Returns true when the focused node's screen bounds match the
      * Home tab bounds we captured the last time Amazon home was
@@ -1846,19 +2248,43 @@ public class HijackService extends AccessibilityService {
      * twice with a delay so it wins against the app's own multi-activity launch chain
      * (e.g. Prime's DeepLinkRouting then Landing) that would otherwise re-cover us.
      */
+    /** How long we keep pulling the config screen back after a learn capture. */
+    private static final long CONFIG_FRONT_DEADLINE_MS = 12_000L;
+    /** Gap between attempts while something else holds the foreground. */
+    private static final long CONFIG_FRONT_RETRY_MS = 600L;
+
     public static void bringConfigToFrontDelayed() {
         final HijackService svc = sInstance;
         if (svc == null || svc.mainHandler == null) return;
-        final Runnable bring = new Runnable() {
-            @Override public void run() {
-                try {
-                    svc.startActivity(new Intent(svc, MainActivity.class).addFlags(
-                            Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
-                } catch (Exception ignored) { /* activity gone; nothing to do */ }
+        svc.scheduleConfigFront(System.currentTimeMillis() + CONFIG_FRONT_DEADLINE_MS);
+    }
+
+    /**
+     * Keeps the config screen in front until the learn result has been dealt with. Two
+     * fixed attempts at 700 and 1500 ms were not enough: a COLD Prime Video start kept
+     * opening activities for 5.4 s (measured 2026-09-15) and buried the warning dialog,
+     * which then had to be dug out with a Menu long-press. Warm starts of the same app
+     * finished in 84 ms, so no pair of fixed delays can cover both. Instead we re-assert
+     * whenever something else has taken the foreground, and stop as soon as nothing is
+     * pending any more or the deadline passes, so a deliberate exit is not fought for
+     * longer than that.
+     */
+    private void scheduleConfigFront(final long deadline) {
+        if (mainHandler == null) return;
+        mainHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!getPackageName().equals(currentForegroundPkg)) {
+                    try {
+                        startActivity(new Intent(HijackService.this, MainActivity.class).addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+                    } catch (Exception ignored) { /* activity gone; nothing to do */ }
+                }
+                if (System.currentTimeMillis() < deadline && MainActivity.hasPendingLearn()) {
+                    scheduleConfigFront(deadline);
+                }
             }
-        };
-        svc.mainHandler.postDelayed(bring, 700);
-        svc.mainHandler.postDelayed(bring, 1500);
+        }, CONFIG_FRONT_RETRY_MS);
     }
 
     /** Opens this app's configuration activity. Used by the Menu long-press shortcut. */

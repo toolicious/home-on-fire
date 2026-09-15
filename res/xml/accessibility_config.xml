@@ -17,11 +17,17 @@
   out of date (the Amazon launcher fires sub-window events that
   briefly switch the tracker off without it coming back on, which
   would otherwise prevent our Back interception).
+
+  flagReportViewIds fills in AccessibilityNodeInfo.getViewIdResourceName().
+  Without it the framework leaves that field null for View-based nodes,
+  and HijackService.launcherSection() reads exactly those ids to tell
+  the launcher's Apps screen from its Home screen. Both are the same
+  activity, so nothing in the window event itself separates them.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeViewFocused"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault|flagRequestFilterKeyEvents|flagRetrieveInteractiveWindows"
+    android:accessibilityFlags="flagDefault|flagRequestFilterKeyEvents|flagRetrieveInteractiveWindows|flagReportViewIds"
     android:canRequestFilterKeyEvents="true"
     android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_description"
