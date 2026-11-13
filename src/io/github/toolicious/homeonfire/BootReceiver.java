@@ -39,8 +39,7 @@ public class BootReceiver extends BroadcastReceiver {
         if (target == null || target.isEmpty()) return;
 
         PackageManager pm = ctx.getPackageManager();
-        Intent launch = pm.getLeanbackLaunchIntentForPackage(target);
-        if (launch == null) launch = pm.getLaunchIntentForPackage(target);
+        Intent launch = TargetIntents.build(pm, prefs, target);
         if (launch == null) {
             Log.w(HijackService.TAG, "Boot: target not launchable: " + target);
             return;

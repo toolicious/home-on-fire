@@ -2543,8 +2543,7 @@ public class MainActivity extends Activity {
             return;
         }
         PackageManager pm = getPackageManager();
-        Intent i = pm.getLeanbackLaunchIntentForPackage(target);
-        if (i == null) i = pm.getLaunchIntentForPackage(target);
+        Intent i = TargetIntents.build(pm, prefs, target);
         if (i == null) {
             Toast.makeText(this,
                     getString(R.string.toast_target_missing, target),

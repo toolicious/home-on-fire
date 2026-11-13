@@ -22,6 +22,7 @@ public class Prefs {
     private static final String FILE = "home_on_fire";
 
     private static final String KEY_TARGET = "target_package";
+    private static final String KEY_TARGET_ACTIVITY = "target_activity";
     private static final String KEY_BOOT = "launch_on_boot";
     private static final String KEY_ENABLED = "hijack_enabled";
     private static final String KEY_VERBOSE = "verbose_logging";
@@ -72,7 +73,19 @@ public class Prefs {
     }
 
     public void setTargetPackage(String pkg) {
-        sp.edit().putString(KEY_TARGET, pkg).apply();
+        SharedPreferences.Editor e = sp.edit().putString(KEY_TARGET, pkg);
+        // An activity belongs to one package; drop it when the package changes.
+        if (!pkg.equals(getTargetPackage())) e.remove(KEY_TARGET_ACTIVITY);
+        e.apply();
+    }
+
+    /** Explicit activity class to launch in the target package, or "" for the automatic launcher lookup. */
+    public String getTargetActivity() {
+        return sp.getString(KEY_TARGET_ACTIVITY, "");
+    }
+
+    public void setTargetActivity(String cls) {
+        sp.edit().putString(KEY_TARGET_ACTIVITY, cls == null ? "" : cls).apply();
     }
 
     /** Defaults to true so a fresh install starts the target on next boot. */
