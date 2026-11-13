@@ -1562,8 +1562,7 @@ public class HijackService extends AccessibilityService {
      */
     private boolean launchTarget(String target, String reasonForLog, boolean withMask) {
         PackageManager pm = getPackageManager();
-        Intent intent = pm.getLeanbackLaunchIntentForPackage(target);
-        if (intent == null) intent = pm.getLaunchIntentForPackage(target);
+        Intent intent = TargetIntents.build(pm, prefs, target);
         if (intent == null) {
             Log.w(TAG, "Target package not installed or not launchable: " + target);
             return false;
